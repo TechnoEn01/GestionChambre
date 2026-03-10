@@ -158,7 +158,7 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, ui } = useAppState()
+  const { eleves, elevesSansGroupe, ui, gristDebugInfo } = useAppState()
   const cinqPremiers = eleves.slice(0, 5)
   return (
     <div className="panel students-panel">
@@ -169,12 +169,38 @@ function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
       {ui.debug.enabled && (
         <div className="debug-five-eleves">
           <div className="debug-five-title">
-            Debug – 5 premiers élèves reçus de Grist (total : {eleves.length})
+            Debug – 5 premiers élèves reçus (total : {eleves.length})
           </div>
+          {gristDebugInfo && (
+            <div className="debug-grist-tables">
+              <div className="debug-grist-row">
+                <strong>Tables reçues de Grist :</strong>{' '}
+                {gristDebugInfo.tableNames.length === 0 ? (
+                  <span className="debug-warn">aucune (vérifier Full document access)</span>
+                ) : (
+                  <code>{gristDebugInfo.tableNames.join(', ')}</code>
+                )}
+              </div>
+              {!gristDebugInfo.tableNames.includes('Eleve') && gristDebugInfo.tableNames.length > 0 && (
+                <div className="debug-grist-row debug-warn">
+                  La table attendue s’appelle exactement <code>Eleve</code> (sans « s », sans accent).
+                  Renommez la table dans Grist ou adaptez le mapping.
+                </div>
+              )}
+              {gristDebugInfo.tableNames.includes('Eleve') && (
+                <div className="debug-grist-row">
+                  Table <code>Eleve</code> : <strong>{gristDebugInfo.eleveRowCount} lignes</strong>.
+                  Colonnes reçues : <code>{gristDebugInfo.eleveColumns.join(', ')}</code>. Attendues :
+                  id, Nom, Prenom, Classe, Groupe.
+                </div>
+              )}
+            </div>
+          )}
           {cinqPremiers.length === 0 ? (
             <div className="debug-five-empty">
-              Aucun élève reçu. Vérifier : nom de la table <code>Eleve</code>, colonnes Nom / Prenom
-              / Classe / Groupe, et accès du widget (Full document access).
+              Aucun élève affiché. Vérifier le nom de la table <code>Eleve</code>, les colonnes Nom
+              / Prenom / Classe / Groupe (exactement ces noms), et l’accès du widget (Full document
+              access).
             </div>
           ) : (
             <ul className="debug-five-list">

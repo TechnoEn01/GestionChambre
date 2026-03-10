@@ -169,6 +169,27 @@
   margin-bottom: 0.2rem;
 }
 
+.debug-grist-tables {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--cc-border);
+}
+
+.debug-grist-row {
+  margin-bottom: 0.25rem;
+}
+
+.debug-grist-row code {
+  font-size: 0.65rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+
+.debug-warn {
+  color: var(--cc-danger);
+}
+
 .students-filters {
   display: flex;
   gap: 0.25rem;

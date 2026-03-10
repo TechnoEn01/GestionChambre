@@ -26,6 +26,13 @@ import {
   getGristEnvironment,
 } from '../grist/gristClient'
 
+/** Infos brutes reçues de Grist, pour le debug (noms de tables et colonnes). */
+export interface GristDebugInfo {
+  tableNames: string[]
+  eleveRowCount: number
+  eleveColumns: string[]
+}
+
 interface AppState {
   ui: UiState
   eleves: EleveRecord[]
@@ -34,8 +41,9 @@ interface AppState {
   groupesAvecEleves: GroupeWithMembers[]
   chambresAvecStats: ChambreWithStats[]
   elevesSansGroupe: EleveRecord[]
-  // Indique si le schéma minimal est valide.
   schemaOk: boolean
+  /** Renseigné à chaque réception de données Grist (pour le mode Debug). */
+  gristDebugInfo: GristDebugInfo | null
   // Actions UI
   setTheme: (mode: ThemeMode) => void
   toggleCompactMode: () => void
@@ -69,6 +77,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [groupes, setGroupes] = useState<GroupeRecord[]>([])
   const [chambres, setChambres] = useState<ChambreRecord[]>([])
   const [schemaOk, setSchemaOk] = useState<boolean>(true)
+  const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
 
   const env = getGristEnvironment()
 
@@ -76,6 +85,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const unsubscribe = subscribeToDocData(
       (docData) => {
         const mapping = env.mapping
+        const tableNames = Object.keys(docData)
+        const eleveTable = docData[mapping.eleve.table]
+        const eleveRowCount = eleveTable?.id?.length ?? 0
+        const eleveColumns = eleveTable ? Object.keys(eleveTable) : []
+        setGristDebugInfo({ tableNames, eleveRowCount, eleveColumns })
+
         const missing: string[] = []
         if (!docData[mapping.eleve.table]) missing.push(`table "${mapping.eleve.table}"`)
         if (!docData[mapping.groupe.table]) missing.push(`table "${mapping.groupe.table}"`)
@@ -239,6 +254,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     chambresAvecStats,
     elevesSansGroupe,
     schemaOk,
+    gristDebugInfo,
     setTheme,
     toggleCompactMode,
     toggleDebug,
