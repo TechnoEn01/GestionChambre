@@ -1,15 +1,26 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { execSync } from 'node:child_process'
+
+function getGitCommit(): string {
+  try {
+    const hash = execSync('git rev-parse --short HEAD').toString().trim()
+    const status = execSync('git status --porcelain').toString().trim()
+    const dirty = status ? '-dirty' : ''
+    return `${hash}${dirty}`
+  } catch {
+    return 'dev'
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Base relative pour:
-  // - un hébergement GitHub Pages sur /docs de la branche principale
-  // - une intégration en iframe comme custom widget Grist
   base: './',
+  define: {
+    __GIT_VERSION__: JSON.stringify(getGitCommit()),
+  },
   build: {
-    // Permet de configurer GitHub Pages en servant le dossier /docs depuis la branche principale.
     outDir: 'docs',
   },
 })

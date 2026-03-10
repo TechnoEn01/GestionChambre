@@ -56,6 +56,20 @@
   color: var(--cc-muted);
 }
 
+.app-version {
+  font-size: 0.65rem;
+  color: var(--cc-muted);
+  margin-top: 0.15rem;
+}
+
+.app-version code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
 .app-header-right {
   display: flex;
   align-items: center;
@@ -119,6 +133,40 @@
 
 .students-panel {
   overflow: hidden;
+}
+
+.debug-five-eleves {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--cc-border);
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 0.7rem;
+}
+
+.debug-five-title {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--cc-muted);
+}
+
+.debug-five-empty {
+  color: var(--cc-muted);
+}
+
+.debug-five-empty code {
+  font-size: 0.65rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+
+.debug-five-list {
+  margin: 0;
+  padding-left: 1rem;
+  list-style: disc;
+}
+
+.debug-five-list li {
+  margin-bottom: 0.2rem;
 }
 
 .students-filters {

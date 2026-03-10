@@ -12,6 +12,9 @@ function App() {
         <div className="app-header-left">
           <h1 className="app-title">Composition Chambre</h1>
           <div className="app-subtitle">Préparation des chambres pour le voyage scolaire</div>
+          <div className="app-version" title="Commit Git du build déployé">
+            Version <code>{__GIT_VERSION__}</code>
+          </div>
         </div>
         <div className="app-header-right">
           <GristApiStatus />
@@ -155,14 +158,35 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
-  // TODO: filtrage, recherche par texte, filtre par classe.
-  const { elevesSansGroupe, ui } = useAppState()
+  const { eleves, elevesSansGroupe, ui } = useAppState()
+  const cinqPremiers = eleves.slice(0, 5)
   return (
     <div className="panel students-panel">
       <div className="panel-header">
         <h2>Élèves non groupés</h2>
         <div className="panel-subtitle">{elevesSansGroupe.length} élèves</div>
       </div>
+      {ui.debug.enabled && (
+        <div className="debug-five-eleves">
+          <div className="debug-five-title">
+            Debug – 5 premiers élèves reçus de Grist (total : {eleves.length})
+          </div>
+          {cinqPremiers.length === 0 ? (
+            <div className="debug-five-empty">
+              Aucun élève reçu. Vérifier : nom de la table <code>Eleve</code>, colonnes Nom / Prenom
+              / Classe / Groupe, et accès du widget (Full document access).
+            </div>
+          ) : (
+            <ul className="debug-five-list">
+              {cinqPremiers.map((e) => (
+                <li key={e.id}>
+                  {e.prenom} {e.nom} · {e.classe} · Groupe id: {e.groupeId ?? '—'}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="students-filters">
         <input
           type="search"

@@ -43,6 +43,10 @@ npm run build
 - Les fichiers produits sont générés dans le dossier `docs/`.
 - Ce dossier est prêt pour un hébergement GitHub Pages (branche principale).
 
+**Version affichée dans le widget** : le build injecte le hash court du commit Git courant.  
+- Pour que la version affichée corresponde au commit déployé, **committe d’abord tes changements, puis lance `npm run build`**, puis ajoute `docs/` et pousse.  
+- Si tu fais le build **avant** le commit, le hash est celui du dernier commit ; en plus, un suffixe **`-dirty`** est ajouté tant qu’il reste des changements non commités (ex. `a1b2c3d-dirty`).
+
 ---
 
 ### 3. Déploiement sur GitHub Pages
