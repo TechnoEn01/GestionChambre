@@ -367,6 +367,12 @@
   border-color: var(--cc-accent);
 }
 
+.grist-api-status {
+  font-size: 0.7rem;
+  color: var(--cc-muted);
+  margin-right: 0.25rem;
+}
+
 .app-compact .student-card {
   padding-block: 0.2rem;
 }

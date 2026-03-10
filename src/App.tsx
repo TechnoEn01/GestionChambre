@@ -1,5 +1,5 @@
 import './App.css'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppState } from './state/AppStateContext'
 
 function App() {
@@ -14,6 +14,7 @@ function App() {
           <div className="app-subtitle">Préparation des chambres pour le voyage scolaire</div>
         </div>
         <div className="app-header-right">
+          <GristApiStatus />
           <SyncIndicator />
           <ThemeToggle />
           <CompactToggle />
@@ -75,6 +76,23 @@ function App() {
         </section>
       </main>
     </div>
+  )
+}
+
+function GristApiStatus() {
+  const { ui } = useAppState()
+  const [gristPresent, setGristPresent] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!ui.debug.enabled) return
+    setGristPresent(typeof window !== 'undefined' && !!window.grist)
+  }, [ui.debug.enabled])
+
+  if (!ui.debug.enabled) return null
+  return (
+    <span className="grist-api-status" title="État de l’API Grist (visible en mode Debug)">
+      {gristPresent === null ? '…' : gristPresent ? 'API Grist détectée' : 'API Grist absente (mode démo)'}
+    </span>
   )
 }
 
