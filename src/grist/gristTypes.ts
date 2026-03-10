@@ -30,8 +30,7 @@ export interface GristDocInfo {
 
 export interface GristDocApi {
   fetchTable(tableId: string): Promise<GristTableData | GristRowRecord[]>
-  applyUpdate(tableId: string, rowId: number, fields: Record<string, any>): Promise<void>
-  addRecords(tableId: string, records: Record<string, any>[]): Promise<void>
+  applyUserActions(actions: any[][], options?: any): Promise<any>
   listTables?(): Promise<string[]>
 }
 

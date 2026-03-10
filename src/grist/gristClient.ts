@@ -173,7 +173,7 @@ export async function assignEleveToGroupe(
   const { eleve } = mapping
   const update: Record<string, any> = {}
   update[eleve.columns.groupeRef] = groupeId
-  await api.applyUpdate(eleve.table, eleveId, update)
+  await api.applyUserActions([['UpdateRecord', eleve.table, eleveId, update]])
 }
 
 export async function assignGroupeToChambre(
@@ -191,6 +191,6 @@ export async function assignGroupeToChambre(
   const table = mapping.groupe.table
   const update: Record<string, any> = {}
   update[mapping.groupeChambreColumn] = chambreId
-  await api.applyUpdate(table, groupeId, update)
+  await api.applyUserActions([['UpdateRecord', table, groupeId, update]])
 }
 
