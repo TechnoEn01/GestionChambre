@@ -175,7 +175,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [chambres, groupesAvecEleves])
 
   const elevesSansGroupe = useMemo(
-    () => eleves.filter((e) => e.groupeId == null).sort((a, b) => a.nom.localeCompare(b.nom)),
+    () =>
+      eleves
+        .filter((e) => e.groupeId == null || e.groupeId === 0)
+        .sort((a, b) => a.nom.localeCompare(b.nom)),
     [eleves],
   )
 
@@ -205,7 +208,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           readOnly: true,
           errorMessage:
-            "Impossible d'enregistrer la modification (probable mode lecture seule ou manque de droits).",
+            "Impossible d'enregistrer la modification (probable mode lecture seule ou manque de droits). Vérifiez dans Grist que vous avez le droit d'éditer le document et les tables Eleve / Groupe.",
         }))
       }
     },

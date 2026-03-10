@@ -106,12 +106,14 @@ export function mapEleves(data: GristDocData, mapping: SchemaMapping): EleveReco
   const records: EleveRecord[] = []
   for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i]
+    let groupeId = columnValue<number | null>(table, tableInfo.columns.groupeRef, i, null)
+    if (groupeId === 0) groupeId = null
     records.push({
       id,
       nom: columnValue(table, tableInfo.columns.nom, i, ''),
       prenom: columnValue(table, tableInfo.columns.prenom, i, ''),
       classe: columnValue(table, tableInfo.columns.classe, i, ''),
-      groupeId: columnValue<number | null>(table, tableInfo.columns.groupeRef, i, null),
+      groupeId,
     })
   }
   return records
