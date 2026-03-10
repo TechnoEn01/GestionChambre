@@ -29,9 +29,16 @@ export interface GristDocInfo {
 }
 
 export interface GristDocApi {
-  fetchTable(tableId: string): Promise<GristTableData>
+  fetchTable(tableId: string): Promise<GristTableData | GristRowRecord[]>
   applyUpdate(tableId: string, rowId: number, fields: Record<string, any>): Promise<void>
   addRecords(tableId: string, records: Record<string, any>[]): Promise<void>
+  listTables?(): Promise<string[]>
+}
+
+/** Une ligne de table Grist (format renvoyé par fetchTable selon les versions). */
+export interface GristRowRecord {
+  id: number
+  [key: string]: any
 }
 
 export interface Grist {
@@ -39,7 +46,7 @@ export interface Grist {
   on(event: 'selection', cb: (sel: GristSelection) => void): void
   on(event: 'docInfo', cb: (info: GristDocInfo) => void): void
   on(event: 'error', cb: (err: any) => void): void
-  ready(): void
+  ready(settings?: { requiredAccess?: 'none' | 'read table' | 'full' }): void
   // Accès direct aux données complètes (full access).
   docApi: GristDocApi
   // Paramètres de configuration du widget (mapping, options, etc.).

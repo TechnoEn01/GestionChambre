@@ -4,6 +4,7 @@ import type {
   GristDocData,
   GristTableData,
   GristDocInfo,
+  GristRowRecord,
 } from './gristTypes'
 import { defaultSchemaMapping, type SchemaMapping } from '../config/schemaConfig'
 import type { EleveRecord, GroupeRecord, ChambreRecord } from '../types/domain'
@@ -29,20 +30,59 @@ export function getDocApi(): GristDocApi | null {
   return isGristAvailable() ? window.grist!.docApi : null
 }
 
+/** Passe une table (lignes ou colonnes) au format colonnes attendu par nos mappers. */
+function normalizeTableData(raw: GristTableData | GristRowRecord[]): GristTableData {
+  if (Array.isArray(raw)) {
+    const rows = raw as GristRowRecord[]
+    if (rows.length === 0) return { id: [] }
+    const cols: Record<string, any[]> = { id: rows.map((r) => r.id) }
+    for (const key of Object.keys(rows[0])) {
+      if (key === 'id') continue
+      cols[key] = rows.map((r) => r[key])
+    }
+    return cols as GristTableData
+  }
+  return raw as GristTableData
+}
+
+/**
+ * Charge les tables Eleve, Groupe, Chambre via docApi.fetchTable (nécessaire en full access :
+ * Grist n’envoie pas toujours tout le doc via on('data')).
+ */
+export async function fetchDocData(mapping: SchemaMapping): Promise<GristDocData> {
+  const api = getDocApi()
+  if (!api) return {}
+  const [eleveRaw, groupeRaw, chambreRaw] = await Promise.all([
+    api.fetchTable(mapping.eleve.table).catch(() => null),
+    api.fetchTable(mapping.groupe.table).catch(() => null),
+    api.fetchTable(mapping.chambre.table).catch(() => null),
+  ])
+  const docData: GristDocData = {}
+  if (eleveRaw) docData[mapping.eleve.table] = normalizeTableData(eleveRaw)
+  if (groupeRaw) docData[mapping.groupe.table] = normalizeTableData(groupeRaw)
+  if (chambreRaw) docData[mapping.chambre.table] = normalizeTableData(chambreRaw)
+  return docData
+}
+
 export function subscribeToDocData(
   onData: (data: GristDocData) => void,
   onDocInfo: (info: GristDocInfo) => void,
   onError: (err: any) => void,
-): void {
+): () => void {
   if (!isGristAvailable()) {
     console.error('[Composition Chambre] Environnement Grist non détecté. Le widget doit être chargé comme custom widget dans Grist.')
-    return
+    return () => {}
   }
   const grist = window.grist!
-  grist.on('data', onData)
   grist.on('docInfo', onDocInfo)
   grist.on('error', onError)
-  grist.ready()
+  grist.on('data', onData)
+  grist.ready({ requiredAccess: 'full' })
+  fetchDocData(defaultSchemaMapping).then(onData).catch((err) => {
+    console.error('[Composition Chambre] Erreur fetchDocData :', err)
+    onError(err)
+  })
+  return () => {}
 }
 
 function columnValue<T = any>(
