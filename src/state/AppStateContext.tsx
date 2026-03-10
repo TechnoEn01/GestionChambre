@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -78,11 +79,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [chambres, setChambres] = useState<ChambreRecord[]>([])
   const [schemaOk, setSchemaOk] = useState<boolean>(true)
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
+  const refreshDataRef = useRef<() => Promise<void>>(async () => {})
 
   const env = getGristEnvironment()
 
   useEffect(() => {
-    const unsubscribe = subscribeToDocData(
+    const result = subscribeToDocData(
       (docData) => {
         const mapping = env.mapping
         const tableNames = Object.keys(docData)
@@ -129,11 +131,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }))
       },
     )
-
-    return () => {
-      // Pas d’API d’unsubscribe simple dans l’API Grist actuelle – on laisse l’abonnement vivre.
-      void unsubscribe
-    }
+    if (result?.refresh) refreshDataRef.current = result.refresh
+    return () => {}
   }, [env.mapping])
 
   const groupesAvecEleves = useMemo<GroupeWithMembers[]>(() => {
@@ -202,6 +201,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       try {
         await assignEleveToGroupe(eleveId, groupeId, env.mapping)
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
+        await refreshDataRef.current()
+        setUi((prev) => ({ ...prev, isSyncing: false }))
       } catch (error: any) {
         console.error('[Composition Chambre] Erreur d’écriture Eleve.Groupe :', error)
         setUi((prev) => ({
@@ -232,6 +233,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       try {
         await assignGroupeToChambre(groupeId, chambreId, env.mapping)
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
+        await refreshDataRef.current()
+        setUi((prev) => ({ ...prev, isSyncing: false }))
       } catch (error: any) {
         console.error('[Composition Chambre] Erreur d’écriture Groupe.Chambre :', error)
         const message =

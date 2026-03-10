@@ -68,21 +68,26 @@ export function subscribeToDocData(
   onData: (data: GristDocData) => void,
   onDocInfo: (info: GristDocInfo) => void,
   onError: (err: any) => void,
-): () => void {
+): { refresh: () => Promise<void> } | void {
   if (!isGristAvailable()) {
     console.error('[Composition Chambre] Environnement Grist non détecté. Le widget doit être chargé comme custom widget dans Grist.')
-    return () => {}
+    return
   }
   const grist = window.grist!
+  const mapping = defaultSchemaMapping
   grist.on('docInfo', onDocInfo)
   grist.on('error', onError)
   grist.on('data', onData)
   grist.ready({ requiredAccess: 'full' })
-  fetchDocData(defaultSchemaMapping).then(onData).catch((err) => {
-    console.error('[Composition Chambre] Erreur fetchDocData :', err)
-    onError(err)
-  })
-  return () => {}
+
+  const refresh = (): Promise<void> =>
+    fetchDocData(mapping).then(onData).catch((err) => {
+      console.error('[Composition Chambre] Erreur fetchDocData :', err)
+      onError(err)
+    })
+
+  refresh()
+  return { refresh }
 }
 
 function columnValue<T = any>(
