@@ -557,7 +557,9 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
             <div className="student-meta">{e.classe}</div>
             {e.verrou && (
               <div className="student-lock" title={e.lockedAt ? `Verrouillé depuis ${e.lockedAt}` : `Verrouillé par ${e.verrou}`}>
-                {e.verrou === currentUser ? 'Vous le manipulez' : `Manipulé par ${e.verrou}`}
+                <span className="student-lock-by">
+                  {e.verrou === currentUser ? 'Vous le manipulez' : `par ${e.verrou}`}
+                </span>
               </div>
             )}
           </div>
@@ -711,7 +713,7 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
                   {formatStudentDisplayName(e, ui.compactMode)}
                   {e.verrou && (
                     <span className="group-pill-lock" title={`Verrouillé par ${e.verrou}`}>
-                      🔒
+                      🔒 <span className="group-pill-lock-by">{e.verrou === currentUser ? 'vous' : e.verrou}</span>
                     </span>
                   )}
                   {!ui.readOnly && (

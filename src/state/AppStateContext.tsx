@@ -21,6 +21,7 @@ import type {
 } from '../types/domain'
 import {
   subscribeToDocData,
+  fetchDocData,
   mapEleves,
   mapGroupes,
   mapChambres,
@@ -431,7 +432,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       const lockTable = mapping.lock
       const now = new Date()
-      const resourceLocks = getLocksForResource(locks, resourceType, resourceId)
+      // Recharger les locks depuis le serveur pour être sûr d'avoir le lock qu'on vient de créer
+      // (le state React peut ne pas être à jour encore).
+      let currentLocks: LockRecord[]
+      try {
+        const docData = await fetchDocData(mapping)
+        currentLocks = mapLocks(docData, mapping)
+      } catch (err) {
+        console.error('[Composition Chambre] Erreur fetch locks pour release :', err)
+        setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
+        return
+      }
+      const resourceLocks = getLocksForResource(currentLocks, resourceType, resourceId)
 
       const actions: any[] = []
       for (const l of resourceLocks) {
@@ -456,7 +468,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
       }
     },
-    [env.mapping, locks],
+    [env.mapping],
   )
 
   const lockEleve = useCallback(

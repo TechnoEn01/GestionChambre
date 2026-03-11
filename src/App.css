@@ -155,6 +155,7 @@
 
 .app-main-groupes-chambres .groupes-sidebar {
   grid-area: groupes-sidebar;
+  min-width: 0; /* permet au panel de scroller si besoin */
 }
 
 .app-main-groupes-chambres .rooms-section-full {
@@ -162,7 +163,8 @@
 }
 
 .app-main-eleves-groupes {
-  grid-template-columns: minmax(220px, 280px) minmax(260px, 1fr);
+  /* Colonne élèves plus étroite pour laisser plus de place au cadre Groupes. */
+  grid-template-columns: minmax(200px, 260px) minmax(320px, 1fr);
 }
 
 /* Pour que la liste élèves et le canvas groupes scrollent (sync), les sections
@@ -441,9 +443,16 @@
 }
 
 .student-lock {
-  font-size: 0.6rem;
+  margin-top: 0.2rem;
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--cc-border);
+}
+
+.student-lock-by {
+  font-size: 0.55rem;
   color: var(--cc-muted);
-  margin-top: 0.15rem;
+  opacity: 0.9;
+  font-style: italic;
 }
 
 .canvas-panel {
@@ -601,6 +610,13 @@
 .group-pill-lock {
   margin-left: 0.15rem;
   font-size: 0.65rem;
+}
+
+.group-pill-lock-by {
+  font-size: 0.55rem;
+  color: var(--cc-muted);
+  font-style: italic;
+  margin-left: 0.1rem;
 }
 
 .students-list-dropzone.dropzone-active {
@@ -1006,6 +1022,12 @@
   }
   .rooms-section {
     grid-area: rooms;
+  }
+  /* Page Groupes → Chambres : conserver 2 colonnes (groupes à gauche, chambres à droite). */
+  .app-main-groupes-chambres {
+    grid-template-columns: minmax(200px, 280px) minmax(240px, 1fr);
+    grid-template-rows: 1fr;
+    grid-template-areas: 'groupes-sidebar rooms-full';
   }
 }
 
