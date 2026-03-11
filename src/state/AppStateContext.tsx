@@ -26,6 +26,8 @@ import {
   assignGroupeToChambre,
   createGroupe,
   removeGroupe as removeGroupeApi,
+  updateGroupeCouleur as updateGroupeCouleurApi,
+  setEleveVerrou,
   getGristEnvironment,
 } from '../grist/gristClient'
 
@@ -53,6 +55,11 @@ interface AppState {
   setTheme: (mode: ThemeMode) => void
   toggleCompactMode: () => void
   toggleDebug: () => void
+  /** Réglage du nombre de chambres par ligne (mode non compact). */
+  setRoomsPerLine: (n: number) => void
+  /** Séjour affiché (1 ou 2). */
+  selectedSejour: 1 | 2
+  setSelectedSejour: (s: 1 | 2) => void
   // Actions métier
   moveEleveToGroupe: (eleveId: number, groupeId: number | null) => Promise<void>
   moveGroupeToChambre: (groupeId: number, chambreId: number | null) => Promise<void>
@@ -60,6 +67,12 @@ interface AppState {
   createGroupe: () => Promise<number>
   /** Retire les élèves du groupe puis supprime le groupe. */
   removeGroupe: (groupeId: number, eleveIds: number[]) => Promise<void>
+  /** Met à jour la couleur du groupe (hex #rrggbb), enregistrée dans Grist (Couleur). */
+  updateGroupeCouleur: (groupeId: number, hexColor: string) => Promise<void>
+  /** Verrouille un élève (champ Verrou = utilisateur courant). */
+  lockEleve: (eleveId: number) => Promise<void>
+  /** Déverrouille un élève (champ Verrou = null). */
+  unlockEleve: (eleveId: number) => Promise<void>
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -81,12 +94,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     debug: { enabled: false },
     errorMessage: null,
     hasGroupRoomLink: false,
+    roomsPerLine: 1,
+    selectedSejour: 1,
   })
   const [eleves, setEleves] = useState<EleveRecord[]>([])
   const [groupes, setGroupes] = useState<GroupeRecord[]>([])
   const [chambres, setChambres] = useState<ChambreRecord[]>([])
   const [schemaOk, setSchemaOk] = useState<boolean>(true)
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
+  const [currentUser, setCurrentUser] = useState<string>('')
   const refreshDataRef = useRef<() => Promise<void>>(async () => {})
 
   const env = getGristEnvironment()
@@ -127,8 +143,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setGroupes(mapGroupes(docData, env.mapping))
         setChambres(mapChambres(docData, env.mapping))
       },
-      () => {
-        // docInfo – pourrait servir pour les permissions ou l’utilisateur courant.
+      (info) => {
+        const user = info?.user
+        setCurrentUser(user?.email || user?.name || 'Anonyme')
       },
       (err) => {
         console.error('[Composition Chambre] Erreur Grist :', err)
@@ -143,22 +160,32 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => {}
   }, [env.mapping])
 
+  const filteredEleves = useMemo(
+    () => eleves.filter((e) => (e.sejour ?? 1) === ui.selectedSejour),
+    [eleves, ui.selectedSejour],
+  )
+
+  const filteredGroupes = useMemo(
+    () => groupes.filter((g) => (g.sejour ?? 1) === ui.selectedSejour),
+    [groupes, ui.selectedSejour],
+  )
+
   const groupesAvecEleves = useMemo<GroupeWithMembers[]>(() => {
     const elevesParGroupe = new Map<number, EleveRecord[]>()
-    for (const g of groupes) {
+    for (const g of filteredGroupes) {
       elevesParGroupe.set(g.id, [])
     }
-    for (const e of eleves) {
+    for (const e of filteredEleves) {
       if (e.groupeId != null) {
         const list = elevesParGroupe.get(e.groupeId)
         if (list) list.push(e)
       }
     }
-    return groupes.map((g) => ({
+    return filteredGroupes.map((g) => ({
       ...g,
       eleves: elevesParGroupe.get(g.id) ?? [],
     }))
-  }, [groupes, eleves])
+  }, [filteredGroupes, filteredEleves])
 
   const chambresAvecStats = useMemo<ChambreWithStats[]>(() => {
     const totalParChambre = new Map<number, number>()
@@ -183,19 +210,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const elevesSansGroupe = useMemo(
     () =>
-      eleves
+      filteredEleves
         .filter((e) => e.groupeId == null || e.groupeId === 0)
         .sort((a, b) => a.nom.localeCompare(b.nom)),
-    [eleves],
+    [filteredEleves],
   )
 
   const classes = useMemo(() => {
     const set = new Set<string>()
-    for (const e of eleves) {
+    for (const e of filteredEleves) {
       if (e.classe?.trim()) set.add(e.classe.trim())
     }
     return [...set].sort()
-  }, [eleves])
+  }, [filteredEleves])
 
   const setTheme = useCallback((mode: ThemeMode) => {
     setUi((prev) => ({ ...prev, theme: mode }))
@@ -210,6 +237,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const toggleDebug = useCallback(() => {
     setUi((prev) => ({ ...prev, debug: { enabled: !prev.debug.enabled } }))
+  }, [])
+
+  const setRoomsPerLine = useCallback((n: number) => {
+    setUi((prev) => ({ ...prev, roomsPerLine: Math.max(1, Math.min(4, n)) }))
+  }, [])
+
+  const setSelectedSejour = useCallback((s: 1 | 2) => {
+    setUi((prev) => ({ ...prev, selectedSejour: s }))
   }, [])
 
   const moveEleveToGroupe = useCallback(
@@ -268,13 +303,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   )
 
   const createGroupeCallback = useCallback(async (): Promise<number> => {
-    const nextNum = groupes.length === 0 ? 1 : Math.max(...groupes.map((g) => g.numGroupe)) + 1
-    const newId = await createGroupe(nextNum, env.mapping)
+    const nextNum =
+      filteredGroupes.length === 0
+        ? 1
+        : Math.max(...filteredGroupes.map((g) => g.numGroupe)) + 1
+    const newId = await createGroupe(nextNum, ui.selectedSejour, env.mapping)
     setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
     await refreshDataRef.current()
     setUi((prev) => ({ ...prev, isSyncing: false }))
     return newId
-  }, [env.mapping, groupes])
+  }, [env.mapping, filteredGroupes, ui.selectedSejour])
 
   const removeGroupeCallback = useCallback(
     async (groupeId: number, eleveIds: number[]) => {
@@ -296,10 +334,53 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [env.mapping],
   )
 
+  const updateGroupeCouleurCallback = useCallback(
+    async (groupeId: number, hexColor: string) => {
+      try {
+        await updateGroupeCouleurApi(groupeId, hexColor, env.mapping)
+        setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
+        await refreshDataRef.current()
+        setUi((prev) => ({ ...prev, isSyncing: false }))
+      } catch (error: any) {
+        console.error('[Composition Chambre] Erreur mise à jour couleur groupe :', error)
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: "Impossible d'enregistrer la couleur du groupe.",
+        }))
+      }
+    },
+    [env.mapping],
+  )
+
+  const lockEleveCallback = useCallback(
+    async (eleveId: number) => {
+      const who = currentUser || 'Anonyme'
+      try {
+        await setEleveVerrou(eleveId, who, env.mapping)
+        await refreshDataRef.current()
+      } catch (error: any) {
+        console.warn('[Composition Chambre] Verrouillage élève (colonne Verrou manquante ?) :', error)
+      }
+    },
+    [currentUser, env.mapping],
+  )
+
+  const unlockEleveCallback = useCallback(
+    async (eleveId: number) => {
+      try {
+        await setEleveVerrou(eleveId, null, env.mapping)
+        await refreshDataRef.current()
+      } catch (error: any) {
+        console.warn('[Composition Chambre] Déverrouillage élève :', error)
+      }
+    },
+    [env.mapping],
+  )
+
   const value: AppState = {
     ui,
-    eleves,
-    groupes,
+    eleves: filteredEleves,
+    groupes: filteredGroupes,
     chambres,
     groupesAvecEleves,
     chambresAvecStats,
@@ -310,10 +391,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setTheme,
     toggleCompactMode,
     toggleDebug,
+    setRoomsPerLine,
+    selectedSejour: ui.selectedSejour,
+    setSelectedSejour,
     moveEleveToGroupe,
     moveGroupeToChambre,
     createGroupe: createGroupeCallback,
     removeGroupe: removeGroupeCallback,
+    updateGroupeCouleur: updateGroupeCouleurCallback,
+    lockEleve: lockEleveCallback,
+    unlockEleve: unlockEleveCallback,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>

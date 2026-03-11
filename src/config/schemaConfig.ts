@@ -19,11 +19,13 @@ export const defaultSchemaMapping: SchemaMapping = {
   eleve: {
     table: 'Eleve',
     columns: {
-      id: 'id', // id Grist implicite
+      id: 'id',
       nom: 'Nom',
       prenom: 'Prenom',
       classe: 'Classe',
       groupeRef: 'Groupe',
+      verrou: 'Verrou',
+      sejour: 'Sejour',
     },
   },
   groupe: {
@@ -35,8 +37,8 @@ export const defaultSchemaMapping: SchemaMapping = {
       ouvert: 'Ouvert',
       xPiton: 'X_piton',
       yPiton: 'Y_piton',
-      // Colonne recommandée, peut ne pas exister.
       chambreRef: 'Chambre',
+      sejour: 'Sejour',
     },
   },
   chambre: {

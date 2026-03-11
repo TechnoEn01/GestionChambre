@@ -8,6 +8,10 @@ export interface EleveRecord {
   prenom: string
   classe: string
   groupeId: GroupeId | null
+  /** Identifiant de l'utilisateur ayant verrouillé l'élève (champ Verrou), ou null si non verrouillé. */
+  verrou?: string | null
+  /** Numéro du séjour (1 ou 2) auquel participe l'élève. */
+  sejour?: 1 | 2
 }
 
 export interface GroupeRecord {
@@ -18,6 +22,8 @@ export interface GroupeRecord {
   xPiton: number | null
   yPiton: number | null
   chambreId?: ChambreId | null
+  /** Numéro du séjour (1 ou 2) auquel le groupe appartient. */
+  sejour?: 1 | 2
 }
 
 export interface ChambreRecord {
@@ -58,9 +64,10 @@ export interface UiState {
   isSyncing: boolean
   readOnly: boolean
   debug: DebugFlags
-  // Message d'erreur global (configuration ou écriture Grist).
   errorMessage: string | null
-  // Indique si la colonne Groupe.Chambre existe réellement.
   hasGroupRoomLink: boolean
+  roomsPerLine: number
+  /** Séjour affiché (1 ou 2) pour préparer les données indépendamment. */
+  selectedSejour: 1 | 2
 }
 

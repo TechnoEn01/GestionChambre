@@ -109,16 +109,26 @@ export function mapEleves(data: GristDocData, mapping: SchemaMapping): EleveReco
 
   const ids = table.id
   const records: EleveRecord[] = []
+  const colSejour = tableInfo.columns.sejour
   for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i]
     let groupeId = columnValue<number | null>(table, tableInfo.columns.groupeRef, i, null)
     if (groupeId === 0) groupeId = null
+    let sejour: 1 | 2 = 1
+    if (colSejour) {
+      const v = columnValue<number | string>(table, colSejour, i, 1)
+      sejour = v === 2 || v === '2' ? 2 : 1
+    }
     records.push({
       id,
       nom: columnValue(table, tableInfo.columns.nom, i, ''),
       prenom: columnValue(table, tableInfo.columns.prenom, i, ''),
       classe: columnValue(table, tableInfo.columns.classe, i, ''),
       groupeId,
+      verrou: tableInfo.columns.verrou
+        ? columnValue<string | null>(table, tableInfo.columns.verrou, i, null)
+        : null,
+      sejour,
     })
   }
   return records
@@ -131,8 +141,14 @@ export function mapGroupes(data: GristDocData, mapping: SchemaMapping): GroupeRe
 
   const ids = table.id
   const records: GroupeRecord[] = []
+  const colSejour = tableInfo.columns.sejour
   for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i]
+    let sejour: 1 | 2 = 1
+    if (colSejour) {
+      const v = columnValue<number | string>(table, colSejour, i, 1)
+      sejour = v === 2 || v === '2' ? 2 : 1
+    }
     records.push({
       id,
       numGroupe: columnValue<number>(table, tableInfo.columns.numGroupe, i, id),
@@ -143,6 +159,7 @@ export function mapGroupes(data: GristDocData, mapping: SchemaMapping): GroupeRe
       chambreId: mapping.groupeChambreColumn
         ? columnValue<number | null>(table, mapping.groupeChambreColumn, i, null)
         : null,
+      sejour,
     })
   }
   return records
@@ -181,6 +198,26 @@ export async function assignEleveToGroupe(
   await api.applyUserActions([['UpdateRecord', eleve.table, eleveId, update]])
 }
 
+/** Met à jour le verrou d’un élève (champ Verrou) : valeur = identifiant utilisateur ou null pour déverrouiller. */
+export async function setEleveVerrou(
+  eleveId: number,
+  value: string | null,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) {
+    throw new Error("API Grist indisponible (docApi).")
+  }
+  const { eleve } = mapping
+  const colVerrou = eleve.columns.verrou
+  if (!colVerrou) {
+    throw new Error("La colonne Verrou est absente du mapping Eleve.")
+  }
+  await api.applyUserActions([
+    ['UpdateRecord', eleve.table, eleveId, { [colVerrou]: value }],
+  ])
+}
+
 export async function assignGroupeToChambre(
   groupeId: number,
   chambreId: number | null,
@@ -199,9 +236,27 @@ export async function assignGroupeToChambre(
   await api.applyUserActions([['UpdateRecord', table, groupeId, update]])
 }
 
+/** Met à jour la couleur d’un groupe (champ Couleur, valeur hexadécimale #rrggbb). */
+export async function updateGroupeCouleur(
+  groupeId: number,
+  hexColor: string,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) {
+    throw new Error("API Grist indisponible (docApi).")
+  }
+  const { groupe } = mapping
+  const hex = hexColor.startsWith('#') ? hexColor : `#${hexColor}`
+  await api.applyUserActions([
+    ['UpdateRecord', groupe.table, groupeId, { [groupe.columns.couleur]: hex }],
+  ])
+}
+
 /** Crée un nouveau groupe dans Grist et retourne son id. */
 export async function createGroupe(
   nextNumGroupe: number,
+  sejour: 1 | 2,
   mapping: SchemaMapping,
 ): Promise<number> {
   const api = getDocApi()
@@ -213,6 +268,9 @@ export async function createGroupe(
     [groupe.columns.numGroupe]: nextNumGroupe,
     [groupe.columns.couleur]: '#4f46e5',
     [groupe.columns.ouvert]: true,
+  }
+  if (groupe.columns.sejour) {
+    fields[groupe.columns.sejour] = sejour
   }
   const result = await api.applyUserActions([['AddRecord', groupe.table, null, fields]])
   const newId = result?.retValues?.[0]
