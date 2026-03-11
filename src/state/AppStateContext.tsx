@@ -27,7 +27,7 @@ import {
   mapChambres,
   mapLocks,
   mapActionLogs,
-  markExpiredLocks,
+  removeExpiredLocks,
   assignEleveToGroupe as assignEleveToGroupeApi,
   assignGroupeToChambre as assignGroupeToChambreApi,
   createGroupe as createGroupeApi,
@@ -215,9 +215,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setLocks(locksList)
         setActionLogs(mapActionLogs(docData, env.mapping))
 
-        // Marquer en Grist les verrous expirés (LockState → 'expired') pour ne pas laisser la table grossir.
+        // Dès qu'on a un lock créé par cette session avec user stamps Grist, utiliser son auteur comme currentUser.
+        const ourLock = locksList.find(
+          (l) =>
+            l.widgetSessionId === widgetSessionIdRef.current &&
+            (l.createdByName || l.createdByEmail),
+        )
+        if (ourLock) {
+          const identity = ourLock.createdByName || ourLock.createdByEmail || ''
+          if (identity) setCurrentUser(identity)
+        }
+
+        // Supprimer les verrous expirés en base (l'historique est dans ActionLog).
         if (locksList.length > 0) {
-          markExpiredLocks(locksList, env.mapping)
+          removeExpiredLocks(locksList, env.mapping)
             .then(() => refreshDataRef.current?.())
             .catch(() => {})
         }

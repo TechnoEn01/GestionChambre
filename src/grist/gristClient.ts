@@ -401,10 +401,10 @@ export function isLockActive(lock: LockRecord, now: Date = new Date()): boolean 
 }
 
 /**
- * Marque en base les verrous expirés (LockState encore 'active' mais ExpiresAt dépassé).
- * À appeler après chaque chargement des données pour éviter que la table Lock ne grossisse.
+ * Supprime en base les verrous expirés (LockState encore 'active' mais ExpiresAt dépassé).
+ * L'historique des actions reste dans ActionLog ; la table Lock reste légère.
  */
-export async function markExpiredLocks(
+export async function removeExpiredLocks(
   locks: LockRecord[],
   mapping: SchemaMapping,
 ): Promise<void> {
@@ -418,13 +418,7 @@ export async function markExpiredLocks(
     if (!l.expiresAt) continue
     const expires = new Date(l.expiresAt).getTime()
     if (!Number.isFinite(expires) || expires > now.getTime()) continue
-    const update: Record<string, any> = {
-      [lockTable.columns.lockState]: 'expired',
-    }
-    if (lockTable.columns.expiresAt) {
-      update[lockTable.columns.expiresAt] = now.toISOString()
-    }
-    actions.push(['UpdateRecord', lockTable.table, l.id, update])
+    actions.push(['RemoveRecord', lockTable.table, l.id])
   }
   if (actions.length === 0) return
   await api.applyUserActions(actions)
