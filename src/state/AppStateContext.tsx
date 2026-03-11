@@ -486,6 +486,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           setLocks((prev) => [...prev, optimisticLock])
         }
         await refreshDataRef.current()
+        // Réappliquer le lock optimiste si le refresh l'a écrasé (race: onData a pu utiliser un state pas encore mis à jour).
+        if (typeof newLockId === 'number') {
+          const optimisticLock: LockRecord = {
+            id: newLockId,
+            resourceType,
+            resourceId,
+            resourceLabel,
+            widgetSessionId: widgetSessionIdRef.current,
+            lockState: 'active',
+            createdAt: now.toISOString(),
+            lastModifiedAt: now.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+            createdByName: currentUser || null,
+            createdByEmail: currentUserIdentifiers.find((x) => x.includes('@')) || null,
+            createdByUserID: null,
+            lastModifiedByName: null,
+            lastModifiedByEmail: null,
+            lastModifiedByUserID: null,
+          }
+          setLocks((prev) => {
+            if (prev.some((l) => l.id === newLockId)) return prev
+            return [...prev, optimisticLock]
+          })
+        }
         return true
       } catch (err) {
         console.error('[Composition Chambre] Erreur création lock :', err)
