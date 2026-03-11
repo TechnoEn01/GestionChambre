@@ -73,6 +73,8 @@ export const defaultSchemaMapping: SchemaMapping = {
       lockState: 'LockState',
       createdAt: 'CreatedAt',
       lastModifiedAt: 'LastModifiedAt',
+      // expiresAt est recommandé mais optionnel : si la colonne n'existe pas
+      // dans Grist, on ne l'utilisera simplement pas.
       expiresAt: 'ExpiresAt',
       createdByName: 'CreatedByName',
       createdByEmail: 'CreatedByEmail',

@@ -393,14 +393,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             'AddRecord',
             lockTable.table,
             null,
-            {
-              [lockTable.columns.resourceType]: resourceType,
-              [lockTable.columns.resourceId]: resourceId,
-              [lockTable.columns.resourceLabel]: resourceLabel,
-              [lockTable.columns.widgetSessionId]: widgetSessionIdRef.current,
-              [lockTable.columns.lockState]: 'active',
-              [lockTable.columns.expiresAt]: expiresAt.toISOString(),
-            },
+            (() => {
+              const payload: Record<string, any> = {
+                [lockTable.columns.resourceType]: resourceType,
+                [lockTable.columns.resourceId]: resourceId,
+                [lockTable.columns.resourceLabel]: resourceLabel,
+                [lockTable.columns.widgetSessionId]: widgetSessionIdRef.current,
+                [lockTable.columns.lockState]: 'active',
+              }
+              if (lockTable.columns.expiresAt) {
+                payload[lockTable.columns.expiresAt] = expiresAt.toISOString()
+              }
+              return payload
+            })(),
           ],
         ])
         await refreshDataRef.current()
@@ -432,15 +437,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       for (const l of resourceLocks) {
         if (!isLockActive(l, now)) continue
         if (l.widgetSessionId === widgetSessionIdRef.current) {
-          actions.push([
-            'UpdateRecord',
-            lockTable.table,
-            l.id,
-            {
-              [lockTable.columns.lockState]: 'released',
-              [lockTable.columns.expiresAt]: now.toISOString(),
-            },
-          ])
+          const update: Record<string, any> = {
+            [lockTable.columns.lockState]: 'released',
+          }
+          if (lockTable.columns.expiresAt) {
+            update[lockTable.columns.expiresAt] = now.toISOString()
+          }
+          actions.push(['UpdateRecord', lockTable.table, l.id, update])
         }
       }
       if (actions.length === 0) return
