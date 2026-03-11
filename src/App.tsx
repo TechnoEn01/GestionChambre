@@ -5,11 +5,34 @@ import { useAppState } from './state/AppStateContext'
 type AppPage = 'eleves-groupes' | 'groupes-chambres'
 
 function App() {
-  const { ui, schemaOk, lockEleve, unlockEleve, selectedSejour, setSelectedSejour } = useAppState()
+  const { ui, schemaOk, lockEleve, unlockEleve, selectedSejour, setSelectedSejour, moveGroupeToChambre } = useAppState()
   const [selectedEleveId, setSelectedEleveId] = useState<number | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState<AppPage>('eleves-groupes')
   const [draggedStudentId, setDraggedStudentId] = useState<number | null>(null)
   const [draggedGroupId, setDraggedGroupId] = useState<number | null>(null)
+
+  const handleSelectEleve = useCallback(
+    (id: number | null) => {
+      if (id === selectedEleveId) {
+        if (selectedEleveId != null) unlockEleve(selectedEleveId)
+        setSelectedEleveId(null)
+      } else {
+        if (selectedEleveId != null) unlockEleve(selectedEleveId)
+        if (id != null) lockEleve(id)
+        setSelectedEleveId(id)
+      }
+    },
+    [selectedEleveId, unlockEleve, lockEleve],
+  )
+
+  const handleEleveAssigned = useCallback(
+    (assignedEleveId?: number) => {
+      if (assignedEleveId != null) unlockEleve(assignedEleveId)
+      setSelectedEleveId(null)
+    },
+    [unlockEleve],
+  )
 
   const handleStudentDragStart = (id: number) => {
     setDraggedStudentId(id)
@@ -34,6 +57,22 @@ function App() {
     isSyncingScroll.current = true
     if (refStudentsList.current) refStudentsList.current.scrollTop = scrollTop
     setTimeout(() => { isSyncingScroll.current = false }, 0)
+  }, [])
+
+  const refGroupsCanvasChambres = useRef<HTMLDivElement>(null)
+  const refRoomsList = useRef<HTMLDivElement>(null)
+  const isSyncingScrollChambres = useRef(false)
+  const handleGroupsCanvasChambresScroll = useCallback((scrollTop: number) => {
+    if (isSyncingScrollChambres.current) return
+    isSyncingScrollChambres.current = true
+    if (refRoomsList.current) refRoomsList.current.scrollTop = scrollTop
+    setTimeout(() => { isSyncingScrollChambres.current = false }, 0)
+  }, [])
+  const handleRoomsListScroll = useCallback((scrollTop: number) => {
+    if (isSyncingScrollChambres.current) return
+    isSyncingScrollChambres.current = true
+    if (refGroupsCanvasChambres.current) refGroupsCanvasChambres.current.scrollTop = scrollTop
+    setTimeout(() => { isSyncingScrollChambres.current = false }, 0)
   }, [])
 
   return (
@@ -109,7 +148,7 @@ function App() {
           <section className="sidebar">
             <StudentsPanel
               selectedEleveId={selectedEleveId}
-              onSelectEleve={(id) => setSelectedEleveId(id)}
+              onSelectEleve={handleSelectEleve}
               draggedStudentId={draggedStudentId}
               onStudentDragStart={handleStudentDragStart}
               onStudentDragEnd={handleStudentDragEnd}
@@ -121,7 +160,7 @@ function App() {
             {schemaOk ? (
               <GroupsCanvas
                 selectedEleveId={selectedEleveId}
-                onEleveAssigned={() => setSelectedEleveId(null)}
+                onEleveAssigned={handleEleveAssigned}
                 mode="eleves-groupes"
                 draggedStudentId={draggedStudentId}
                 onStudentDragStart={handleStudentDragStart}
@@ -151,9 +190,13 @@ function App() {
                 selectedEleveId={null}
                 onEleveAssigned={() => {}}
                 mode="groupes-chambres"
+                selectedGroupId={selectedGroupId}
+                onSelectGroup={setSelectedGroupId}
                 draggedGroupId={draggedGroupId}
                 onGroupDragStart={(id) => setDraggedGroupId(id)}
                 onGroupDragEnd={() => setDraggedGroupId(null)}
+                groupsCanvasRef={refGroupsCanvasChambres}
+                onGroupsCanvasScroll={handleGroupsCanvasChambresScroll}
               />
             ) : (
               <div className="panel canvas-panel">
@@ -166,7 +209,15 @@ function App() {
           </section>
           <section className="rooms-section rooms-section-full">
             {schemaOk ? (
-              <RoomsPanel />
+              <RoomsPanel
+                roomsListRef={refRoomsList}
+                onRoomsListScroll={handleRoomsListScroll}
+                selectedGroupId={selectedGroupId}
+                onAssignGroupToChambre={async (groupeId, chambreId) => {
+                  await moveGroupeToChambre(groupeId, chambreId)
+                  setSelectedGroupId(null)
+                }}
+              />
             ) : (
               <div className="panel rooms-panel">
                 <div className="panel-header">
@@ -459,8 +510,11 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
 
 interface GroupsCanvasProps {
   selectedEleveId: number | null
-  onEleveAssigned: () => void
+  /** Appelé après affectation d’un élève à un groupe (avec l’id de l’élève pour déverrouiller). */
+  onEleveAssigned: (assignedEleveId?: number) => void
   mode: 'eleves-groupes' | 'groupes-chambres'
+  selectedGroupId?: number | null
+  onSelectGroup?: (groupId: number | null) => void
   draggedStudentId?: number | null
   onStudentDragStart?: (id: number) => void
   onStudentDragEnd?: () => void
@@ -471,13 +525,22 @@ interface GroupsCanvasProps {
   onGroupsCanvasScroll?: (scrollTop: number) => void
 }
 
-function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
+function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, selectedGroupId = null, onSelectGroup, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
   const { groupesAvecEleves, moveEleveToGroupe, createGroupe, removeGroupe, updateGroupeCouleur, ui } = useAppState()
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null)
   const handleDropOnNewGroup = async (eleveId: number) => {
     const newId = await createGroupe()
     await moveEleveToGroupe(eleveId, newId)
-    onEleveAssigned()
+    onEleveAssigned(eleveId)
+  }
+  const handleGroupClick = async (g: { id: number; numGroupe: number }) => {
+    if (ui.readOnly) return
+    if (mode === 'eleves-groupes' && selectedEleveId != null) {
+      await moveEleveToGroupe(selectedEleveId, g.id)
+      onEleveAssigned(selectedEleveId)
+    } else if (mode === 'groupes-chambres' && onSelectGroup) {
+      onSelectGroup(selectedGroupId === g.id ? null : g.id)
+    }
   }
   return (
     <div className="panel canvas-panel">
@@ -495,14 +558,15 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId
           return (
           <div
             key={g.id}
-            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''}`}
+            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''} ${mode === 'groupes-chambres' && selectedGroupId === g.id ? 'group-card-selected' : ''}`}
             style={{ borderColor, backgroundColor: bgColor }}
             draggable={!ui.readOnly}
+            onClick={() => handleGroupClick(g)}
             onDoubleClick={async () => {
               if (ui.readOnly) return
-              if (selectedEleveId != null) {
+              if (mode === 'eleves-groupes' && selectedEleveId != null) {
                 await moveEleveToGroupe(selectedEleveId, g.id)
-                onEleveAssigned()
+                onEleveAssigned(selectedEleveId)
               }
             }}
             onDragOver={(evt) => {
@@ -617,6 +681,10 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId
         {mode === 'eleves-groupes' && (
           <div
             className="group-card group-card-new"
+            onClick={async () => {
+              if (ui.readOnly) return
+              if (selectedEleveId != null) await handleDropOnNewGroup(selectedEleveId)
+            }}
             onDragOver={(evt) => {
               if (ui.readOnly) return
               evt.preventDefault()
@@ -653,12 +721,39 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId
   )
 }
 
-function RoomsPanel() {
+interface RoomsPanelProps {
+  roomsListRef?: React.RefObject<HTMLDivElement | null>
+  onRoomsListScroll?: (scrollTop: number) => void
+  selectedGroupId?: number | null
+  onAssignGroupToChambre?: (groupeId: number, chambreId: number) => Promise<void>
+}
+
+/** Extrait le préfixe numérique du nom de chambre (ex. "571" → 57, "58A" → 58). */
+function getChambrePrefix(nomChambre: string): number {
+  const m = nomChambre.trim().match(/^(\d+)/)
+  return m ? parseInt(m[1], 10) : 0
+}
+
+/** Ordre des groupes de chambres par préfixe : 57X, puis 58X, 56X, 55X, puis les autres par préfixe. */
+const PREFIX_ORDER = [57, 58, 56, 55]
+
+function getChambreSortKey(prefix: number): number {
+  const i = PREFIX_ORDER.indexOf(prefix)
+  return i >= 0 ? i : PREFIX_ORDER.length + prefix
+}
+
+function RoomsPanel({ roomsListRef, onRoomsListScroll, selectedGroupId = null, onAssignGroupToChambre }: RoomsPanelProps) {
   const { chambresAvecStats, groupesAvecEleves, moveGroupeToChambre, ui, setRoomsPerLine } = useAppState()
   const [dragOverRoomId, setDragOverRoomId] = useState<number | null>(null)
   const chambresOrdonnees = useMemo(
     () =>
       [...chambresAvecStats].sort((a, b) => {
+        const pa = getChambrePrefix(a.nomChambre)
+        const pb = getChambrePrefix(b.nomChambre)
+        const ka = getChambreSortKey(pa)
+        const kb = getChambreSortKey(pb)
+        if (ka !== kb) return ka - kb
+        if (a.capacite !== b.capacite) return a.capacite - b.capacite
         const aFull = a.capaciteRestante === 0
         const bFull = b.capaciteRestante === 0
         return (aFull ? 1 : 0) - (bFull ? 1 : 0)
@@ -697,20 +792,35 @@ function RoomsPanel() {
         </div>
       </div>
       <div
+        ref={roomsListRef}
         className="rooms-list"
         style={{ ['--rooms-per-line' as string]: roomsPerLine }}
+        onScroll={onRoomsListScroll ? (evt) => onRoomsListScroll(evt.currentTarget.scrollTop) : undefined}
       >
         {chambresOrdonnees.map((c) => {
           const full = c.capaciteRestante === 0
           const groupesDansChambre = groupesAvecEleves.filter((g) => g.chambreId === c.id)
-          const elevesDansChambre = groupesDansChambre.flatMap((g) => g.eleves)
           return (
             <div
               key={c.id}
               className={`room-card ${full ? 'room-full' : 'room-available'} ${
                 ui.hasGroupRoomLink ? '' : 'room-disabled'
-              } ${dragOverRoomId === c.id ? 'room-card-drag-over' : ''}`}
+              } ${dragOverRoomId === c.id ? 'room-card-drag-over' : ''} ${
+                selectedGroupId != null && ui.hasGroupRoomLink && !ui.readOnly ? 'room-card-selectable' : ''
+              }`}
               draggable={false}
+              onClick={async () => {
+                if (selectedGroupId != null && onAssignGroupToChambre && ui.hasGroupRoomLink && !ui.readOnly) {
+                  const groupe = groupesAvecEleves.find((g) => g.id === selectedGroupId)
+                  if (groupe && groupe.eleves.length <= c.capaciteRestante) {
+                    await onAssignGroupToChambre(selectedGroupId, c.id)
+                  } else if (groupe) {
+                    alert(
+                      `La chambre "${c.nomChambre}" n'a pas assez de place pour ce groupe (${groupe.eleves.length} élèves, ${c.capaciteRestante} place(s) restante(s)).`,
+                    )
+                  }
+                }
+              }}
               onDragOver={(evt) => {
                 if (!ui.hasGroupRoomLink || ui.readOnly) return
                 evt.preventDefault()
@@ -755,21 +865,35 @@ function RoomsPanel() {
               <div className="room-meta">
                 {full ? 'Complet' : `${c.capaciteRestante} place${c.capaciteRestante > 1 ? 's' : ''} restante${c.capaciteRestante > 1 ? 's' : ''}`}
               </div>
-              {elevesDansChambre.length > 0 && (
-                <div className="room-students">
-                  <div className="room-students-label">Élèves affectés</div>
-                  <ul className="room-students-list">
-                    {elevesDansChambre.map((e) => (
-                      <li key={e.id} className="room-student-item">
-                        {formatStudentDisplayName(e, ui.compactMode)}
+              {groupesDansChambre.length > 0 ? (
+                <div className="room-groups">
+                  <div className="room-groups-label">Groupes affectés</div>
+                  <ul className="room-groups-list">
+                    {groupesDansChambre.map((g) => (
+                      <li key={g.id} className="room-group-item">
+                        <span className="room-group-title">Groupe {g.numGroupe}</span>
+                        <span className="room-group-count">{g.eleves.length} él.</span>
+                        {!ui.readOnly && ui.hasGroupRoomLink && (
+                          <button
+                            type="button"
+                            className="room-group-remove-btn"
+                            title="Retirer le groupe de la chambre"
+                            aria-label="Retirer le groupe de la chambre"
+                            onClick={async (evt) => {
+                              evt.stopPropagation()
+                              await moveGroupeToChambre(g.id, null)
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
                 </div>
-              )}
-              {elevesDansChambre.length === 0 && (
+              ) : (
                 <div className="room-students room-students-empty">
-                  Aucun élève affecté
+                  Aucun groupe affecté
                 </div>
               )}
             </div>

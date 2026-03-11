@@ -279,11 +279,17 @@ export async function createGroupe(
   if (groupe.columns.sejour) {
     fields[groupe.columns.sejour] = sejour
   }
-  const result = await api.applyUserActions([['AddRecord', groupe.table, null, fields]])
-  const newId = result?.retValues?.[0]
+  const actions: any[] = [
+    ['AddRecord', groupe.table, null, fields],
+  ]
+  const result = await api.applyUserActions(actions)
+  let newId = result?.retValues?.[0]
   if (typeof newId !== 'number') {
     throw new Error("Création du groupe : l'API Grist n'a pas renvoyé l'id du nouvel enregistrement.")
   }
+  await api.applyUserActions([
+    ['UpdateRecord', groupe.table, newId, { [groupe.columns.couleur]: hex }],
+  ])
   return newId
 }
 

@@ -95,7 +95,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     debug: { enabled: false },
     errorMessage: null,
     hasGroupRoomLink: false,
-    roomsPerLine: 1,
+    roomsPerLine: 4,
     selectedSejour: 1,
   })
   const [eleves, setEleves] = useState<EleveRecord[]>([])

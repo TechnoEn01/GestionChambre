@@ -165,13 +165,44 @@
   grid-template-columns: minmax(220px, 280px) minmax(260px, 1fr);
 }
 
+/* Pour que la liste élèves et le canvas groupes scrollent (sync), les sections
+   doivent contraindre la hauteur et le .panel doit remplir l'espace. */
+.sidebar,
+.canvas-section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar .panel,
+.canvas-section .panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .rooms-section-preview .panel {
   max-height: 200px;
 }
 
+/* Page Groupes → Chambres : contraindre hauteur pour sync scroll groupes ↔ chambres. */
+.groupes-sidebar,
 .rooms-section-full {
+  min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.groupes-sidebar .panel,
+.rooms-section-full .panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rooms-section-full {
   gap: 0.5rem;
   min-width: 0;
 }
@@ -453,6 +484,12 @@
   opacity: 0.9;
 }
 
+.group-card-selected {
+  box-shadow: 0 0 0 3px var(--cc-accent);
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
 .group-header {
   display: flex;
   justify-content: space-between;
@@ -596,6 +633,8 @@
 }
 
 .rooms-list {
+  flex: 1;
+  min-height: 0;
   padding: 0.5rem;
   display: grid;
   grid-template-columns: repeat(var(--rooms-per-line, 1), minmax(0, 1fr));
@@ -633,6 +672,14 @@
 .room-card-drag-over {
   box-shadow: 0 0 0 3px var(--cc-accent), 0 6px 20px rgba(79, 70, 229, 0.2);
   transform: scale(1.02);
+}
+
+.room-card-selectable {
+  cursor: pointer;
+}
+
+.room-card-selectable:hover {
+  box-shadow: 0 0 0 2px var(--cc-accent);
 }
 
 .room-header {
@@ -719,6 +766,67 @@
   border-top: 1px solid var(--cc-border);
   padding-top: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.room-groups {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--cc-border);
+}
+
+.room-groups-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cc-muted);
+  margin-bottom: 0.35rem;
+}
+
+.room-groups-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.room-group-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 0.35rem;
+}
+
+.room-group-title {
+  font-weight: 600;
+}
+
+.room-group-count {
+  font-size: 0.75rem;
+  color: var(--cc-muted);
+}
+
+.room-group-remove-btn {
+  margin-left: auto;
+  padding: 0 0.35rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  border: 1px solid var(--cc-muted);
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+}
+
+.room-group-remove-btn:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--cc-danger);
+  border-color: var(--cc-danger);
 }
 
 .export-panel {
