@@ -30,6 +30,59 @@ export function getDocApi(): GristDocApi | null {
   return isGristAvailable() ? window.grist!.docApi : null
 }
 
+/** Génère un identifiant unique de session widget (pour SessionUser.WidgetSessionId). */
+export function generateWidgetSessionId(): string {
+  return `cc-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+export interface CurrentUserInfo {
+  email: string
+  name: string
+  sessionId: string | null
+}
+
+/**
+ * Crée ou récupère la session utilisateur dans la table SessionUser et retourne
+ * l'email et le nom à utiliser (depuis docInfo ou la ligne créée).
+ * Si la table SessionUser n'existe pas ou est absente du mapping, retourne les infos depuis docInfo.
+ */
+export async function ensureSessionUser(
+  mapping: SchemaMapping,
+  docInfoUser: { email?: string; name?: string } | null,
+): Promise<CurrentUserInfo> {
+  const api = getDocApi()
+  const email = docInfoUser?.email ?? docInfoUser?.name ?? ''
+  const name = docInfoUser?.name ?? docInfoUser?.email ?? 'Anonyme'
+  const fallback: CurrentUserInfo = { email: email || 'Anonyme', name: name || 'Anonyme', sessionId: null }
+
+  if (!api || !mapping.sessionUser) return fallback
+
+  const su = mapping.sessionUser
+  const sessionId = generateWidgetSessionId()
+  const now = new Date().toISOString()
+
+  try {
+    await api.applyUserActions([
+      [
+        'AddRecord',
+        su.table,
+        null,
+        {
+          [su.columns.email]: email || 'Anonyme',
+          [su.columns.name]: name || 'Anonyme',
+          [su.columns.createdAt]: now,
+          [su.columns.widgetSessionId]: sessionId,
+          [su.columns.active]: true,
+        },
+      ],
+    ])
+    return { email: email || 'Anonyme', name: name || 'Anonyme', sessionId }
+  } catch (err) {
+    console.warn('[Composition Chambre] SessionUser non disponible, utilisation docInfo :', err)
+    return fallback
+  }
+}
+
 /** Passe une table (lignes ou colonnes) au format colonnes attendu par nos mappers. */
 function normalizeTableData(raw: GristTableData | GristRowRecord[]): GristTableData {
   if (Array.isArray(raw)) {
@@ -119,16 +172,33 @@ export function mapEleves(data: GristDocData, mapping: SchemaMapping): EleveReco
       const v = columnValue<number | string>(table, colSejour, i, 1)
       sejour = v === 2 || v === '2' ? 2 : 1
     }
+    const lockedBy = tableInfo.columns.lockedBy
+      ? columnValue<string | null>(table, tableInfo.columns.lockedBy, i, null)
+      : null
+    const verrouVal = tableInfo.columns.verrou
+      ? columnValue<string | null>(table, tableInfo.columns.verrou, i, null)
+      : null
     records.push({
       id,
       nom: columnValue(table, tableInfo.columns.nom, i, ''),
       prenom: columnValue(table, tableInfo.columns.prenom, i, ''),
       classe: columnValue(table, tableInfo.columns.classe, i, ''),
       groupeId,
-      verrou: tableInfo.columns.verrou
-        ? columnValue<string | null>(table, tableInfo.columns.verrou, i, null)
-        : null,
+      verrou: lockedBy ?? verrouVal,
       sejour,
+      lockedBy: lockedBy ?? undefined,
+      lockedAt: tableInfo.columns.lockedAt
+        ? columnValue<string | null>(table, tableInfo.columns.lockedAt, i, null)
+        : undefined,
+      lastModifiedBy: tableInfo.columns.lastModifiedBy
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedBy, i, null)
+        : undefined,
+      lastModifiedAt: tableInfo.columns.lastModifiedAt
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedAt, i, null)
+        : undefined,
+      status: tableInfo.columns.status
+        ? columnValue<string | null>(table, tableInfo.columns.status, i, null)
+        : undefined,
     })
   }
   return records
@@ -160,6 +230,21 @@ export function mapGroupes(data: GristDocData, mapping: SchemaMapping): GroupeRe
         ? columnValue<number | null>(table, mapping.groupeChambreColumn, i, null)
         : null,
       sejour,
+      lockedBy: tableInfo.columns.lockedBy
+        ? columnValue<string | null>(table, tableInfo.columns.lockedBy, i, null)
+        : undefined,
+      lockedAt: tableInfo.columns.lockedAt
+        ? columnValue<string | null>(table, tableInfo.columns.lockedAt, i, null)
+        : undefined,
+      lastModifiedBy: tableInfo.columns.lastModifiedBy
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedBy, i, null)
+        : undefined,
+      lastModifiedAt: tableInfo.columns.lastModifiedAt
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedAt, i, null)
+        : undefined,
+      status: tableInfo.columns.status
+        ? columnValue<string | null>(table, tableInfo.columns.status, i, null)
+        : undefined,
     })
   }
   return records
@@ -178,23 +263,38 @@ export function mapChambres(data: GristDocData, mapping: SchemaMapping): Chambre
       id,
       nomChambre: columnValue<string>(table, tableInfo.columns.nomChambre, i, String(id)),
       capacite: columnValue<number>(table, tableInfo.columns.capacite, i, 0),
+      lastModifiedBy: tableInfo.columns.lastModifiedBy
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedBy, i, null)
+        : undefined,
+      lastModifiedAt: tableInfo.columns.lastModifiedAt
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedAt, i, null)
+        : undefined,
+      status: tableInfo.columns.status
+        ? columnValue<string | null>(table, tableInfo.columns.status, i, null)
+        : undefined,
     })
   }
   return records
 }
 
+/** Optionnel : qui a fait la modification (pour LastModifiedBy et déverrouillage). */
 export async function assignEleveToGroupe(
   eleveId: number,
   groupeId: number | null,
   mapping: SchemaMapping,
+  lastModifiedBy?: string,
 ): Promise<void> {
   const api = getDocApi()
-  if (!api) {
-    throw new Error("API Grist indisponible (docApi).")
-  }
+  if (!api) throw new Error("API Grist indisponible (docApi).")
   const { eleve } = mapping
-  const update: Record<string, any> = {}
-  update[eleve.columns.groupeRef] = groupeId
+  const update: Record<string, any> = { [eleve.columns.groupeRef]: groupeId }
+  if (lastModifiedBy) {
+    if (eleve.columns.verrou) update[eleve.columns.verrou] = null
+    if (eleve.columns.lockedBy) update[eleve.columns.lockedBy] = null
+    if (eleve.columns.lockedAt) update[eleve.columns.lockedAt] = null
+    if (eleve.columns.lastModifiedBy) update[eleve.columns.lastModifiedBy] = lastModifiedBy
+    if (eleve.columns.lastModifiedAt) update[eleve.columns.lastModifiedAt] = new Date().toISOString()
+  }
   await api.applyUserActions([['UpdateRecord', eleve.table, eleveId, update]])
 }
 
@@ -209,31 +309,120 @@ export async function setEleveVerrou(
     throw new Error("API Grist indisponible (docApi).")
   }
   const { eleve } = mapping
-  const colVerrou = eleve.columns.verrou
-  if (!colVerrou) {
-    throw new Error("La colonne Verrou est absente du mapping Eleve.")
-  }
-  await api.applyUserActions([
-    ['UpdateRecord', eleve.table, eleveId, { [colVerrou]: value }],
-  ])
+  const update: Record<string, any> = {}
+  if (eleve.columns.verrou) update[eleve.columns.verrou] = value
+  if (eleve.columns.lockedBy) update[eleve.columns.lockedBy] = value
+  if (eleve.columns.lockedAt) update[eleve.columns.lockedAt] = value ? new Date().toISOString() : null
+  if (Object.keys(update).length === 0) throw new Error("Aucune colonne de verrou (Verrou ou LockedBy) dans le mapping Eleve.")
+  await api.applyUserActions([['UpdateRecord', eleve.table, eleveId, update]])
 }
 
+/** Déverrouille un élève et remplit LastModifiedBy / LastModifiedAt. */
+export async function clearEleveLockAndSetLastModified(
+  eleveId: number,
+  who: string,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) throw new Error("API Grist indisponible (docApi).")
+  const { eleve } = mapping
+  const update: Record<string, any> = {}
+  if (eleve.columns.verrou) update[eleve.columns.verrou] = null
+  if (eleve.columns.lockedBy) update[eleve.columns.lockedBy] = null
+  if (eleve.columns.lockedAt) update[eleve.columns.lockedAt] = null
+  if (eleve.columns.lastModifiedBy) update[eleve.columns.lastModifiedBy] = who
+  if (eleve.columns.lastModifiedAt) update[eleve.columns.lastModifiedAt] = new Date().toISOString()
+  if (Object.keys(update).length === 0) return
+  await api.applyUserActions([['UpdateRecord', eleve.table, eleveId, update]])
+}
+
+/** Verrouille un groupe (LockedBy, LockedAt). */
+export async function setGroupeLock(
+  groupeId: number,
+  who: string,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) throw new Error("API Grist indisponible (docApi).")
+  const { groupe } = mapping
+  const update: Record<string, any> = {}
+  if (groupe.columns.lockedBy) update[groupe.columns.lockedBy] = who
+  if (groupe.columns.lockedAt) update[groupe.columns.lockedAt] = new Date().toISOString()
+  if (Object.keys(update).length === 0) return
+  await api.applyUserActions([['UpdateRecord', groupe.table, groupeId, update]])
+}
+
+/** Déverrouille un groupe et remplit LastModifiedBy / LastModifiedAt. */
+export async function clearGroupeLockAndSetLastModified(
+  groupeId: number,
+  who: string,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) throw new Error("API Grist indisponible (docApi).")
+  const { groupe } = mapping
+  const update: Record<string, any> = {}
+  if (groupe.columns.lockedBy) update[groupe.columns.lockedBy] = null
+  if (groupe.columns.lockedAt) update[groupe.columns.lockedAt] = null
+  if (groupe.columns.lastModifiedBy) update[groupe.columns.lastModifiedBy] = who
+  if (groupe.columns.lastModifiedAt) update[groupe.columns.lastModifiedAt] = new Date().toISOString()
+  if (Object.keys(update).length === 0) return
+  await api.applyUserActions([['UpdateRecord', groupe.table, groupeId, update]])
+}
+
+/** Déverrouille un groupe sans remplir LastModified (ex. annulation drag). */
+export async function clearGroupeLock(
+  groupeId: number,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) return
+  const { groupe } = mapping
+  const update: Record<string, any> = {}
+  if (groupe.columns.lockedBy) update[groupe.columns.lockedBy] = null
+  if (groupe.columns.lockedAt) update[groupe.columns.lockedAt] = null
+  if (Object.keys(update).length === 0) return
+  await api.applyUserActions([['UpdateRecord', groupe.table, groupeId, update]])
+}
+
+/** Met à jour LastModifiedBy / LastModifiedAt sur une chambre. */
+export async function setChambreLastModified(
+  chambreId: number,
+  who: string,
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) return
+  const { chambre } = mapping
+  const update: Record<string, any> = {}
+  if (chambre.columns.lastModifiedBy) update[chambre.columns.lastModifiedBy] = who
+  if (chambre.columns.lastModifiedAt) update[chambre.columns.lastModifiedAt] = new Date().toISOString()
+  if (Object.keys(update).length === 0) return
+  await api.applyUserActions([['UpdateRecord', chambre.table, chambreId, update]])
+}
+
+/** Optionnel : lastModifiedBy pour déverrouiller le groupe et remplir LastModified sur groupe et chambre. */
 export async function assignGroupeToChambre(
   groupeId: number,
   chambreId: number | null,
   mapping: SchemaMapping,
+  lastModifiedBy?: string,
 ): Promise<void> {
   const api = getDocApi()
-  if (!api) {
-    throw new Error("API Grist indisponible (docApi).")
+  if (!api) throw new Error("API Grist indisponible (docApi).")
+  if (!mapping.groupeChambreColumn) throw new Error('La colonne Groupe → Chambre est absente de la configuration.')
+  const { groupe } = mapping
+  const update: Record<string, any> = { [mapping.groupeChambreColumn]: chambreId }
+  if (lastModifiedBy) {
+    if (groupe.columns.lockedBy) update[groupe.columns.lockedBy] = null
+    if (groupe.columns.lockedAt) update[groupe.columns.lockedAt] = null
+    if (groupe.columns.lastModifiedBy) update[groupe.columns.lastModifiedBy] = lastModifiedBy
+    if (groupe.columns.lastModifiedAt) update[groupe.columns.lastModifiedAt] = new Date().toISOString()
   }
-  if (!mapping.groupeChambreColumn) {
-    throw new Error('La colonne Groupe → Chambre est absente de la configuration.')
+  await api.applyUserActions([['UpdateRecord', groupe.table, groupeId, update]])
+  if (chambreId != null && lastModifiedBy) {
+    await setChambreLastModified(chambreId, lastModifiedBy, mapping)
   }
-  const table = mapping.groupe.table
-  const update: Record<string, any> = {}
-  update[mapping.groupeChambreColumn] = chambreId
-  await api.applyUserActions([['UpdateRecord', table, groupeId, update]])
 }
 
 /** Met à jour la couleur d’un groupe (champ Couleur, valeur hexadécimale #rrggbb). */
@@ -310,5 +499,38 @@ export async function removeGroupe(
   }
   actions.push(['RemoveRecord', groupe.table, groupeId])
   await api.applyUserActions(actions)
+}
+
+/** Journalise une action dans la table ActionLog si elle existe. */
+export async function logAction(
+  mapping: SchemaMapping,
+  action: string,
+  userId: string,
+  entityType: 'Eleve' | 'Groupe' | 'Chambre',
+  entityId: number,
+  details?: string,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api || !mapping.actionLog) return
+  const log = mapping.actionLog
+  try {
+    await api.applyUserActions([
+      [
+        'AddRecord',
+        log.table,
+        null,
+        {
+          [log.columns.at]: new Date().toISOString(),
+          [log.columns.action]: action,
+          [log.columns.userId]: userId,
+          [log.columns.entityType]: entityType,
+          [log.columns.entityId]: entityId,
+          [log.columns.details]: details ?? '',
+        },
+      ],
+    ])
+  } catch (err) {
+    console.warn('[Composition Chambre] ActionLog non disponible :', err)
+  }
 }
 

@@ -5,7 +5,7 @@ import { useAppState } from './state/AppStateContext'
 type AppPage = 'eleves-groupes' | 'groupes-chambres'
 
 function App() {
-  const { ui, schemaOk, lockEleve, unlockEleve, selectedSejour, setSelectedSejour, moveGroupeToChambre } = useAppState()
+  const { ui, schemaOk, lockEleve, unlockEleve, lockGroupe, unlockGroupe, selectedSejour, setSelectedSejour, moveGroupeToChambre, currentUser } = useAppState()
   const [selectedEleveId, setSelectedEleveId] = useState<number | null>(null)
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState<AppPage>('eleves-groupes')
@@ -147,6 +147,7 @@ function App() {
         <main className="app-main app-main-eleves-groupes">
           <section className="sidebar">
             <StudentsPanel
+              currentUser={currentUser}
               selectedEleveId={selectedEleveId}
               onSelectEleve={handleSelectEleve}
               draggedStudentId={draggedStudentId}
@@ -159,6 +160,7 @@ function App() {
           <section className="canvas-section">
             {schemaOk ? (
               <GroupsCanvas
+                currentUser={currentUser}
                 selectedEleveId={selectedEleveId}
                 onEleveAssigned={handleEleveAssigned}
                 mode="eleves-groupes"
@@ -187,14 +189,21 @@ function App() {
           <section className="sidebar groupes-sidebar">
             {schemaOk ? (
               <GroupsCanvas
+                currentUser={currentUser}
                 selectedEleveId={null}
                 onEleveAssigned={() => {}}
                 mode="groupes-chambres"
                 selectedGroupId={selectedGroupId}
                 onSelectGroup={setSelectedGroupId}
                 draggedGroupId={draggedGroupId}
-                onGroupDragStart={(id) => setDraggedGroupId(id)}
-                onGroupDragEnd={() => setDraggedGroupId(null)}
+                onGroupDragStart={(id) => {
+                  lockGroupe(id)
+                  setDraggedGroupId(id)
+                }}
+                onGroupDragEnd={() => {
+                  if (draggedGroupId != null) unlockGroupe(draggedGroupId)
+                  setDraggedGroupId(null)
+                }}
                 groupsCanvasRef={refGroupsCanvasChambres}
                 onGroupsCanvasScroll={handleGroupsCanvasChambresScroll}
               />
@@ -318,6 +327,7 @@ function formatStudentDisplayName(
 }
 
 interface StudentsPanelProps {
+  currentUser?: string
   selectedEleveId: number | null
   onSelectEleve: (id: number | null) => void
   draggedStudentId: number | null
@@ -327,8 +337,8 @@ interface StudentsPanelProps {
   onStudentsListScroll?: (scrollTop: number) => void
 }
 
-function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo } = useAppState()
+function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
+  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, groupes } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const filteredSansGroupe = useMemo(() => {
@@ -372,6 +382,32 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
       </div>
       {ui.debug.enabled && (
         <div className="debug-five-eleves">
+          <div className="debug-five-title">
+            Debug – Utilisateur et verrous
+          </div>
+          <div className="debug-grist-tables">
+            <div className="debug-grist-row">
+              <strong>Vous :</strong> {currentUser || '—'}
+            </div>
+            {sessionUserInfo && (
+              <div className="debug-grist-row">
+                <strong>Session :</strong> {sessionUserInfo.email} / {sessionUserInfo.name}
+                {sessionUserInfo.sessionId && ` (${sessionUserInfo.sessionId})`}
+              </div>
+            )}
+            {eleves.some((e) => e.verrou) && (
+              <div className="debug-grist-row">
+                <strong>Élèves verrouillés :</strong>{' '}
+                {eleves.filter((e) => e.verrou).map((e) => `${e.nom} par ${e.verrou}${e.lockedAt ? ` (${e.lockedAt})` : ''}`).join(' ; ')}
+              </div>
+            )}
+            {groupes.some((g) => g.lockedBy) && (
+              <div className="debug-grist-row">
+                <strong>Groupes verrouillés :</strong>{' '}
+                {groupes.filter((g) => g.lockedBy).map((g) => `Groupe ${g.numGroupe} par ${g.lockedBy}${g.lockedAt ? ` (${g.lockedAt})` : ''}`).join(' ; ')}
+              </div>
+            )}
+          </div>
           <div className="debug-five-title">
             Debug – 5 premiers élèves reçus (total : {eleves.length})
           </div>
@@ -472,11 +508,15 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
         {filteredSansGroupe.map((e) => (
           <div
             key={e.id}
-            className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''} ${draggedStudentId === e.id ? 'student-card-dragging' : ''}`}
-            draggable={!ui.readOnly}
+            className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''} ${draggedStudentId === e.id ? 'student-card-dragging' : ''} ${e.verrou && e.verrou !== currentUser ? 'student-card-locked-by-other' : ''}`}
+            draggable={!ui.readOnly && (!e.verrou || e.verrou === currentUser)}
             onClick={() => onSelectEleve(selectedEleveId === e.id ? null : e.id)}
             onDragStart={(evt) => {
               if (ui.readOnly) return
+              if (e.verrou && e.verrou !== currentUser) {
+                evt.preventDefault()
+                return
+              }
               onStudentDragStart(e.id)
               evt.dataTransfer.setData('text/plain', `student:${e.id}`)
             }}
@@ -488,8 +528,8 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
             </div>
             <div className="student-meta">{e.classe}</div>
             {e.verrou && (
-              <div className="student-lock" title={`Verrouillé par ${e.verrou}`}>
-                Verrouillé par {e.verrou}
+              <div className="student-lock" title={e.lockedAt ? `Verrouillé depuis ${e.lockedAt}` : `Verrouillé par ${e.verrou}`}>
+                {e.verrou === currentUser ? 'Vous le manipulez' : `Manipulé par ${e.verrou}`}
               </div>
             )}
           </div>
@@ -509,6 +549,8 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
 }
 
 interface GroupsCanvasProps {
+  /** Utilisateur courant (email ou nom) pour afficher/verifier les verrous. */
+  currentUser?: string
   selectedEleveId: number | null
   /** Appelé après affectation d’un élève à un groupe (avec l’id de l’élève pour déverrouiller). */
   onEleveAssigned: (assignedEleveId?: number) => void
@@ -525,7 +567,7 @@ interface GroupsCanvasProps {
   onGroupsCanvasScroll?: (scrollTop: number) => void
 }
 
-function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, selectedGroupId = null, onSelectGroup, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
+function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode, selectedGroupId = null, onSelectGroup, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
   const { groupesAvecEleves, moveEleveToGroupe, createGroupe, removeGroupe, updateGroupeCouleur, ui } = useAppState()
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null)
   const handleDropOnNewGroup = async (eleveId: number) => {
@@ -558,9 +600,9 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, selectedGroupId 
           return (
           <div
             key={g.id}
-            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''} ${mode === 'groupes-chambres' && selectedGroupId === g.id ? 'group-card-selected' : ''}`}
+            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''} ${mode === 'groupes-chambres' && selectedGroupId === g.id ? 'group-card-selected' : ''} ${g.lockedBy && g.lockedBy !== currentUser ? 'group-card-locked-by-other' : ''}`}
             style={{ borderColor, backgroundColor: bgColor }}
-            draggable={!ui.readOnly}
+            draggable={!ui.readOnly && (!g.lockedBy || g.lockedBy === currentUser)}
             onClick={() => handleGroupClick(g)}
             onDoubleClick={async () => {
               if (ui.readOnly) return
@@ -585,7 +627,7 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, selectedGroupId 
                 const id = Number(data.split(':')[1])
                 if (!Number.isNaN(id)) {
                   await moveEleveToGroupe(id, g.id)
-                  onEleveAssigned()
+                  onEleveAssigned(id)
                 }
               }
             }}
@@ -600,6 +642,11 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, selectedGroupId 
             <div className="group-header">
               <span className="group-title">Groupe {g.numGroupe}</span>
               <span className="group-count">{g.eleves.length} él.</span>
+              {g.lockedBy && (
+                <span className="group-locked-by" title={g.lockedAt ? `Verrouillé depuis ${g.lockedAt}` : undefined}>
+                  {g.lockedBy === currentUser ? 'Vous le manipulez' : `Manipulé par ${g.lockedBy}`}
+                </span>
+              )}
               {!ui.readOnly && (
                 <button
                   type="button"

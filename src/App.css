@@ -490,6 +490,26 @@
   outline-offset: 2px;
 }
 
+.group-card-locked-by-other {
+  border-color: var(--cc-danger) !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
+}
+
+.group-locked-by {
+  font-size: 0.65rem;
+  color: var(--cc-muted);
+  margin-left: auto;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-card-locked-by-other {
+  border-color: var(--cc-danger);
+  box-shadow: 0 0 0 1px var(--cc-danger);
+}
+
 .group-header {
   display: flex;
   justify-content: space-between;

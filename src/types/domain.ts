@@ -8,10 +8,20 @@ export interface EleveRecord {
   prenom: string
   classe: string
   groupeId: GroupeId | null
-  /** Identifiant de l'utilisateur ayant verrouillé l'élève (champ Verrou), ou null si non verrouillé. */
+  /** Identifiant de l'utilisateur ayant verrouillé l'élève (Verrou ou LockedBy), ou null si non verrouillé. */
   verrou?: string | null
   /** Numéro du séjour (1 ou 2) auquel participe l'élève. */
   sejour?: 1 | 2
+  /** Verrouillage coopératif : qui manipule actuellement (LockedBy). */
+  lockedBy?: string | null
+  /** Date/heure début verrouillage (LockedAt). */
+  lockedAt?: string | null
+  /** Dernier utilisateur ayant modifié l'élève (LastModifiedBy). */
+  lastModifiedBy?: string | null
+  /** Date/heure dernière modification (LastModifiedAt). */
+  lastModifiedAt?: string | null
+  /** État optionnel : free, locked, grouped, etc. */
+  status?: string | null
 }
 
 export interface GroupeRecord {
@@ -24,12 +34,38 @@ export interface GroupeRecord {
   chambreId?: ChambreId | null
   /** Numéro du séjour (1 ou 2) auquel le groupe appartient. */
   sejour?: 1 | 2
+  /** Verrouillage coopératif : qui manipule actuellement (LockedBy). */
+  lockedBy?: string | null
+  /** Date/heure début verrouillage (LockedAt). */
+  lockedAt?: string | null
+  /** Dernier utilisateur ayant modifié le groupe (LastModifiedBy). */
+  lastModifiedBy?: string | null
+  /** Date/heure dernière modification (LastModifiedAt). */
+  lastModifiedAt?: string | null
+  /** État optionnel : free, locked, etc. */
+  status?: string | null
 }
 
 export interface ChambreRecord {
   id: ChambreId
   nomChambre: string
   capacite: number
+  /** Dernier utilisateur ayant modifié l'affectation (LastModifiedBy). */
+  lastModifiedBy?: string | null
+  /** Date/heure dernière modification (LastModifiedAt). */
+  lastModifiedAt?: string | null
+  /** État optionnel. */
+  status?: string | null
+}
+
+/** Session utilisateur courante (table SessionUser dans Grist). */
+export interface SessionUserRecord {
+  id: number
+  Email: string
+  Name: string
+  CreatedAt: string
+  WidgetSessionId: string
+  Active: boolean
 }
 
 export interface ChambreWithStats extends ChambreRecord {

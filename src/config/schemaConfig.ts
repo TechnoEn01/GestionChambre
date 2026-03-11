@@ -7,9 +7,13 @@ export interface SchemaMapping {
   eleve: TableColumnMapping
   groupe: TableColumnMapping
   chambre: TableColumnMapping
-  // Optionnel – colonne Ref vers Chambre depuis Groupe.
+  /** Optionnel – colonne Ref vers Chambre depuis Groupe. */
   groupeChambreColumn?: string
-  // Tables optionnelles pour les verrous et les logs.
+  /** Table technique pour identifier l'utilisateur courant (SessionUser). */
+  sessionUser?: TableColumnMapping
+  /** Table optionnelle pour journaliser les actions (ActionLog). */
+  actionLog?: TableColumnMapping
+  /** @deprecated Tables optionnelles pour les verrous et les logs (remplacées par colonnes sur Eleve/Groupe). */
   lockTable?: TableColumnMapping
   logTable?: TableColumnMapping
 }
@@ -26,6 +30,11 @@ export const defaultSchemaMapping: SchemaMapping = {
       groupeRef: 'Groupe',
       verrou: 'Verrou',
       sejour: 'Sejour',
+      lockedBy: 'LockedBy',
+      lockedAt: 'LockedAt',
+      lastModifiedBy: 'LastModifiedBy',
+      lastModifiedAt: 'LastModifiedAt',
+      status: 'Status',
     },
   },
   groupe: {
@@ -39,6 +48,11 @@ export const defaultSchemaMapping: SchemaMapping = {
       yPiton: 'Y_piton',
       chambreRef: 'Chambre',
       sejour: 'Sejour',
+      lockedBy: 'LockedBy',
+      lockedAt: 'LockedAt',
+      lastModifiedBy: 'LastModifiedBy',
+      lastModifiedAt: 'LastModifiedAt',
+      status: 'Status',
     },
   },
   chambre: {
@@ -47,11 +61,35 @@ export const defaultSchemaMapping: SchemaMapping = {
       id: 'id',
       nomChambre: 'NomChambre',
       capacite: 'Capacite',
+      lastModifiedBy: 'LastModifiedBy',
+      lastModifiedAt: 'LastModifiedAt',
+      status: 'Status',
     },
   },
-  // Nom de colonne Ref sur la table Groupe vers Chambre (optionnelle).
   groupeChambreColumn: 'Chambre',
-  // Tables optionnelles de lock et de log recommandées – non obligatoires.
+  sessionUser: {
+    table: 'SessionUser',
+    columns: {
+      id: 'id',
+      email: 'Email',
+      name: 'Name',
+      createdAt: 'CreatedAt',
+      widgetSessionId: 'WidgetSessionId',
+      active: 'Active',
+    },
+  },
+  actionLog: {
+    table: 'ActionLog',
+    columns: {
+      id: 'id',
+      at: 'At',
+      action: 'Action',
+      userId: 'UserId',
+      entityType: 'EntityType',
+      entityId: 'EntityId',
+      details: 'Details',
+    },
+  },
   lockTable: undefined,
   logTable: undefined,
 }

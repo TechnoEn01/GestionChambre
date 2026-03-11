@@ -28,7 +28,12 @@ import {
   removeGroupe as removeGroupeApi,
   updateGroupeCouleur as updateGroupeCouleurApi,
   setEleveVerrou,
+  setGroupeLock,
+  clearGroupeLock,
+  ensureSessionUser,
   getGristEnvironment,
+  logAction,
+  type CurrentUserInfo,
 } from '../grist/gristClient'
 import { getNewGroupColor } from '../config/groupColors'
 
@@ -70,10 +75,18 @@ interface AppState {
   removeGroupe: (groupeId: number, eleveIds: number[]) => Promise<void>
   /** Met à jour la couleur du groupe (hex #rrggbb), enregistrée dans Grist (Couleur). */
   updateGroupeCouleur: (groupeId: number, hexColor: string) => Promise<void>
-  /** Verrouille un élève (champ Verrou = utilisateur courant). */
+  /** Verrouille un élève (LockedBy / Verrou = utilisateur courant). */
   lockEleve: (eleveId: number) => Promise<void>
-  /** Déverrouille un élève (champ Verrou = null). */
+  /** Déverrouille un élève. */
   unlockEleve: (eleveId: number) => Promise<void>
+  /** Verrouille un groupe (page chambres). */
+  lockGroupe: (groupeId: number) => Promise<void>
+  /** Déverrouille un groupe (annulation drag ou après drop). */
+  unlockGroupe: (groupeId: number) => Promise<void>
+  /** Utilisateur courant (SessionUser ou docInfo), pour debug et verrous. */
+  currentUser: string
+  /** Infos session (email, name, sessionId) pour le mode debug. */
+  sessionUserInfo: CurrentUserInfo | null
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -104,6 +117,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [schemaOk, setSchemaOk] = useState<boolean>(true)
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
   const [currentUser, setCurrentUser] = useState<string>('')
+  const [sessionUserInfo, setSessionUserInfo] = useState<CurrentUserInfo | null>(null)
   const refreshDataRef = useRef<() => Promise<void>>(async () => {})
 
   const env = getGristEnvironment()
@@ -144,9 +158,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setGroupes(mapGroupes(docData, env.mapping))
         setChambres(mapChambres(docData, env.mapping))
       },
-      (info) => {
-        const user = info?.user
-        setCurrentUser(user?.email || user?.name || 'Anonyme')
+      async (info) => {
+        try {
+          const session = await ensureSessionUser(env.mapping, info?.user ?? null)
+          setSessionUserInfo(session)
+          setCurrentUser(session.name || session.email || 'Anonyme')
+        } catch {
+          const user = info?.user
+          setSessionUserInfo(null)
+          setCurrentUser(user?.email || user?.name || 'Anonyme')
+        }
       },
       (err) => {
         console.error('[Composition Chambre] Erreur Grist :', err)
@@ -251,7 +272,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const moveEleveToGroupe = useCallback(
     async (eleveId: number, groupeId: number | null) => {
       try {
-        await assignEleveToGroupe(eleveId, groupeId, env.mapping)
+        await assignEleveToGroupe(eleveId, groupeId, env.mapping, currentUser || 'Anonyme')
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
         await refreshDataRef.current()
         setUi((prev) => ({ ...prev, isSyncing: false }))
@@ -265,11 +286,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }))
       }
     },
-    [env.mapping],
+    [currentUser, env.mapping],
   )
 
   const moveGroupeToChambre = useCallback(
     async (groupeId: number, chambreId: number | null) => {
+      const who = currentUser || 'Anonyme'
       // Vérification de capacité : refus si la chambre ne peut accueillir tous les élèves du groupe.
       const groupe = groupesAvecEleves.find((g) => g.id === groupeId)
       const chambre = chambresAvecStats.find((c) => c.id === chambreId)
@@ -283,7 +305,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       }
       try {
-        await assignGroupeToChambre(groupeId, chambreId, env.mapping)
+        await assignGroupeToChambre(groupeId, chambreId, env.mapping, currentUser || 'Anonyme')
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
         await refreshDataRef.current()
         setUi((prev) => ({ ...prev, isSyncing: false }))
@@ -298,9 +320,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           readOnly: true,
           errorMessage: message,
         }))
+        await logAction(env.mapping, 'error', who, 'Groupe', groupeId, String(error?.message || error))
       }
     },
-    [chambresAvecStats, env.mapping, groupesAvecEleves],
+    [chambresAvecStats, currentUser, env.mapping, groupesAvecEleves],
   )
 
   const createGroupeCallback = useCallback(async (): Promise<number> => {
@@ -364,15 +387,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const lockEleveCallback = useCallback(
     async (eleveId: number) => {
+      const eleve = eleves.find((e) => e.id === eleveId)
+      const lockedBy = eleve?.lockedBy ?? eleve?.verrou
       const who = currentUser || 'Anonyme'
+      if (lockedBy && lockedBy !== who) {
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: `En cours de manipulation par ${lockedBy}`,
+        }))
+        return
+      }
       try {
         await setEleveVerrou(eleveId, who, env.mapping)
         await refreshDataRef.current()
+        await logAction(env.mapping, 'lock_eleve', who, 'Eleve', eleveId, '')
       } catch (error: any) {
-        console.warn('[Composition Chambre] Verrouillage élève (colonne Verrou manquante ?) :', error)
+        console.warn('[Composition Chambre] Verrouillage élève :', error)
+        setUi((prev) => ({ ...prev, errorMessage: 'Verrouillage impossible (colonne Verrou/LockedBy manquante ?).' }))
       }
     },
-    [currentUser, env.mapping],
+    [currentUser, eleves, env.mapping],
   )
 
   const unlockEleveCallback = useCallback(
@@ -382,6 +416,41 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         await refreshDataRef.current()
       } catch (error: any) {
         console.warn('[Composition Chambre] Déverrouillage élève :', error)
+      }
+    },
+    [env.mapping],
+  )
+
+  const lockGroupeCallback = useCallback(
+    async (groupeId: number) => {
+      const groupe = groupes.find((g) => g.id === groupeId)
+      const lockedBy = groupe?.lockedBy
+      const who = currentUser || 'Anonyme'
+      if (lockedBy && lockedBy !== who) {
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: `Groupe en cours de manipulation par ${lockedBy}`,
+        }))
+        return
+      }
+      try {
+        await setGroupeLock(groupeId, who, env.mapping)
+        await refreshDataRef.current()
+        await logAction(env.mapping, 'lock_groupe', who, 'Groupe', groupeId, '')
+      } catch (error: any) {
+        console.warn('[Composition Chambre] Verrouillage groupe :', error)
+      }
+    },
+    [currentUser, env.mapping, groupes],
+  )
+
+  const unlockGroupeCallback = useCallback(
+    async (groupeId: number) => {
+      try {
+        await clearGroupeLock(groupeId, env.mapping)
+        await refreshDataRef.current()
+      } catch (error: any) {
+        console.warn('[Composition Chambre] Déverrouillage groupe :', error)
       }
     },
     [env.mapping],
@@ -411,6 +480,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     updateGroupeCouleur: updateGroupeCouleurCallback,
     lockEleve: lockEleveCallback,
     unlockEleve: unlockEleveCallback,
+    lockGroupe: lockGroupeCallback,
+    unlockGroupe: unlockGroupeCallback,
+    currentUser: currentUser || 'Anonyme',
+    sessionUserInfo,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
