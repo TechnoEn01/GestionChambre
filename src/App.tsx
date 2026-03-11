@@ -601,14 +601,14 @@ function StudentsPanel({ currentUser = '', isCurrentUser = (who) => !who || who 
               <span className="student-nom">{e.nom}</span>
               <span className="student-prenom">{e.prenom}</span>
             </div>
-            <div className="student-meta">{e.classe}</div>
-            {e.verrou && (
-              <div className="student-lock" title={e.lockedAt ? `Verrouillé depuis ${e.lockedAt}` : `Verrouillé par ${e.verrou}`}>
-                <span className="student-lock-by">
-                  {isCurrentUser(e.verrou) ? 'Vous le manipulez' : `par ${e.verrou}`}
+            <div className="student-meta" title={e.verrou && e.lockedAt ? `Verrouillé depuis ${e.lockedAt}` : undefined}>
+              {e.classe}
+              {e.verrou && (
+                <span className="student-lock-inline">
+                  {isCurrentUser(e.verrou) ? ' · Vous le manipulez' : ` · par ${e.verrou}`}
                 </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         ))}
         {filteredSansGroupe.length === 0 && (

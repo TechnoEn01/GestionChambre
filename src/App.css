@@ -457,19 +457,20 @@
 .student-meta {
   font-size: 0.7rem;
   color: var(--cc-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem;
 }
 
-.student-lock {
-  margin-top: 0.2rem;
-  padding-top: 0.15rem;
-  border-top: 1px solid var(--cc-border);
-}
-
-.student-lock-by {
-  font-size: 0.55rem;
+.student-lock-inline {
+  font-size: 0.65rem;
   color: var(--cc-muted);
-  opacity: 0.9;
   font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .canvas-panel {
