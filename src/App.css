@@ -76,6 +76,77 @@
   gap: 0.5rem;
 }
 
+.app-nav {
+  display: flex;
+  gap: 0;
+  padding: 0 1rem;
+  background: var(--cc-surface);
+  border-bottom: 1px solid var(--cc-border);
+  min-height: 2.5rem;
+  align-items: stretch;
+}
+
+.app-nav-tab {
+  padding: 0 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.app-nav-tab:hover {
+  color: var(--cc-fg);
+}
+
+.app-nav-tab-active {
+  color: var(--cc-accent);
+  border-bottom-color: var(--cc-accent);
+}
+
+.app-nav-inline {
+  background: none;
+  border: none;
+  color: var(--cc-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+.app-banner-info {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.app-main-groupes-chambres {
+  grid-template-columns: minmax(220px, 320px) minmax(280px, 1fr);
+  grid-template-areas: 'groupes-sidebar rooms-full';
+}
+
+.app-main-groupes-chambres .groupes-sidebar {
+  grid-area: groupes-sidebar;
+}
+
+.app-main-groupes-chambres .rooms-section-full {
+  grid-area: rooms-full;
+}
+
+.rooms-section-preview .panel {
+  max-height: 200px;
+}
+
+.rooms-section-full {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .app-banner {
   padding: 0.4rem 1rem;
   font-size: 0.75rem;
@@ -98,7 +169,7 @@
   grid-template-columns: minmax(220px, 280px) minmax(260px, 1fr) minmax(220px, 280px);
   gap: 0.75rem;
   padding: 0.75rem;
-  height: calc(100vh - 52px);
+  height: calc(100vh - 93px);
   box-sizing: border-box;
 }
 
@@ -288,11 +359,66 @@
   padding: 0.1rem 0.35rem;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.04);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: grab;
+}
+.group-student-pill:active {
+  cursor: grabbing;
+}
+.group-pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cc-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.group-pill-remove:hover {
+  background: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+}
+.students-list-dropzone.dropzone-active {
+  outline: 2px dashed var(--cc-accent);
+  outline-offset: 2px;
+  background: rgba(79, 70, 229, 0.06);
 }
 
 .group-empty {
   font-size: 0.7rem;
   color: var(--cc-muted);
+}
+
+.group-delete-btn {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--cc-muted);
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+}
+.group-delete-btn:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.group-card-new {
+  border-style: dashed;
+  background: rgba(79, 70, 229, 0.06);
+  cursor: pointer;
+}
+.group-card-new .group-empty {
+  font-style: italic;
 }
 
 .rooms-panel {
@@ -342,6 +468,48 @@
 .room-meta {
   font-size: 0.7rem;
   color: var(--cc-muted);
+}
+
+.room-students {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--cc-border);
+}
+
+.room-students-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cc-muted);
+  margin-bottom: 0.35rem;
+}
+
+.room-students-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.room-student-item {
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.2rem 0.4rem;
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 0.35rem;
+  color: var(--cc-fg, #0f172a);
+}
+
+.room-students-empty {
+  font-size: 0.75rem;
+  color: var(--cc-muted);
+  font-style: italic;
+  border-top: 1px solid var(--cc-border);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .export-panel {
@@ -436,6 +604,13 @@
   border-color: var(--cc-accent);
 }
 
+.toolbar-button-active,
+.toolbar-button[aria-pressed='true'] {
+  background: var(--cc-accent-soft);
+  border-color: var(--cc-accent);
+  color: var(--cc-accent);
+}
+
 .grist-api-status {
   font-size: 0.7rem;
   color: var(--cc-muted);
@@ -453,6 +628,9 @@
 
 .app-compact .room-card {
   padding-block: 0.25rem;
+}
+.app-compact .room-student-item {
+  font-size: 0.78rem;
 }
 
 @media (max-width: 1024px) {

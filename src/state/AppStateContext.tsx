@@ -24,6 +24,8 @@ import {
   mapChambres,
   assignEleveToGroupe,
   assignGroupeToChambre,
+  createGroupe,
+  removeGroupe as removeGroupeApi,
   getGristEnvironment,
 } from '../grist/gristClient'
 
@@ -42,6 +44,8 @@ interface AppState {
   groupesAvecEleves: GroupeWithMembers[]
   chambresAvecStats: ChambreWithStats[]
   elevesSansGroupe: EleveRecord[]
+  /** Liste des classes distinctes (pour filtre). */
+  classes: string[]
   schemaOk: boolean
   /** Renseigné à chaque réception de données Grist (pour le mode Debug). */
   gristDebugInfo: GristDebugInfo | null
@@ -52,6 +56,10 @@ interface AppState {
   // Actions métier
   moveEleveToGroupe: (eleveId: number, groupeId: number | null) => Promise<void>
   moveGroupeToChambre: (groupeId: number, chambreId: number | null) => Promise<void>
+  /** Crée un nouveau groupe et retourne son id. */
+  createGroupe: () => Promise<number>
+  /** Retire les élèves du groupe puis supprime le groupe. */
+  removeGroupe: (groupeId: number, eleveIds: number[]) => Promise<void>
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -181,6 +189,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [eleves],
   )
 
+  const classes = useMemo(() => {
+    const set = new Set<string>()
+    for (const e of eleves) {
+      if (e.classe?.trim()) set.add(e.classe.trim())
+    }
+    return [...set].sort()
+  }, [eleves])
+
   const setTheme = useCallback((mode: ThemeMode) => {
     setUi((prev) => ({ ...prev, theme: mode }))
     if (typeof document !== 'undefined') {
@@ -251,6 +267,35 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [chambresAvecStats, env.mapping, groupesAvecEleves],
   )
 
+  const createGroupeCallback = useCallback(async (): Promise<number> => {
+    const nextNum = groupes.length === 0 ? 1 : Math.max(...groupes.map((g) => g.numGroupe)) + 1
+    const newId = await createGroupe(nextNum, env.mapping)
+    setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
+    await refreshDataRef.current()
+    setUi((prev) => ({ ...prev, isSyncing: false }))
+    return newId
+  }, [env.mapping, groupes])
+
+  const removeGroupeCallback = useCallback(
+    async (groupeId: number, eleveIds: number[]) => {
+      try {
+        await removeGroupeApi(groupeId, eleveIds, env.mapping)
+        setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
+        await refreshDataRef.current()
+        setUi((prev) => ({ ...prev, isSyncing: false }))
+      } catch (error: any) {
+        console.error('[Composition Chambre] Erreur suppression groupe :', error)
+        setUi((prev) => ({
+          ...prev,
+          readOnly: true,
+          errorMessage:
+            "Impossible de supprimer le groupe (droits ou colonnes manquantes). Vérifiez l'accès en écriture.",
+        }))
+      }
+    },
+    [env.mapping],
+  )
+
   const value: AppState = {
     ui,
     eleves,
@@ -259,6 +304,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     groupesAvecEleves,
     chambresAvecStats,
     elevesSansGroupe,
+    classes,
     schemaOk,
     gristDebugInfo,
     setTheme,
@@ -266,6 +312,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     toggleDebug,
     moveEleveToGroupe,
     moveGroupeToChambre,
+    createGroupe: createGroupeCallback,
+    removeGroupe: removeGroupeCallback,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>

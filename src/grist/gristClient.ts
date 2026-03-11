@@ -199,3 +199,45 @@ export async function assignGroupeToChambre(
   await api.applyUserActions([['UpdateRecord', table, groupeId, update]])
 }
 
+/** Crée un nouveau groupe dans Grist et retourne son id. */
+export async function createGroupe(
+  nextNumGroupe: number,
+  mapping: SchemaMapping,
+): Promise<number> {
+  const api = getDocApi()
+  if (!api) {
+    throw new Error("API Grist indisponible (docApi).")
+  }
+  const { groupe } = mapping
+  const fields: Record<string, any> = {
+    [groupe.columns.numGroupe]: nextNumGroupe,
+    [groupe.columns.couleur]: '#4f46e5',
+    [groupe.columns.ouvert]: true,
+  }
+  const result = await api.applyUserActions([['AddRecord', groupe.table, null, fields]])
+  const newId = result?.retValues?.[0]
+  if (typeof newId !== 'number') {
+    throw new Error("Création du groupe : l'API Grist n'a pas renvoyé l'id du nouvel enregistrement.")
+  }
+  return newId
+}
+
+/** Retire tous les élèves du groupe puis supprime le groupe. */
+export async function removeGroupe(
+  groupeId: number,
+  eleveIds: number[],
+  mapping: SchemaMapping,
+): Promise<void> {
+  const api = getDocApi()
+  if (!api) {
+    throw new Error("API Grist indisponible (docApi).")
+  }
+  const { eleve, groupe } = mapping
+  const actions: any[] = []
+  for (const id of eleveIds) {
+    actions.push(['UpdateRecord', eleve.table, id, { [eleve.columns.groupeRef]: null }])
+  }
+  actions.push(['RemoveRecord', groupe.table, groupeId])
+  await api.applyUserActions(actions)
+}
+

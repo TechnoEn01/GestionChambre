@@ -1,20 +1,29 @@
 import './App.css'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAppState } from './state/AppStateContext'
+
+type AppPage = 'eleves-groupes' | 'groupes-chambres'
 
 function App() {
   const { ui, schemaOk } = useAppState()
   const [selectedEleveId, setSelectedEleveId] = useState<number | null>(null)
+  const [currentPage, setCurrentPage] = useState<AppPage>('eleves-groupes')
 
   return (
     <div className={`app-root app-theme-${ui.theme} ${ui.compactMode ? 'app-compact' : ''}`}>
       <header className="app-header">
         <div className="app-header-left">
           <h1 className="app-title">Composition Chambre</h1>
-          <div className="app-subtitle">Préparation des chambres pour le voyage scolaire</div>
-          <div className="app-version" title="Commit Git du build déployé">
-            Version <code>{__GIT_VERSION__}</code>
+          <div className="app-subtitle">
+            {currentPage === 'eleves-groupes'
+              ? 'Affecter les élèves aux groupes'
+              : 'Composer les chambres'}
           </div>
+          {ui.debug.enabled && (
+            <div className="app-version" title="Commit Git du build déployé">
+              Version <code>{__GIT_VERSION__}</code>
+            </div>
+          )}
         </div>
         <div className="app-header-right">
           <GristApiStatus />
@@ -24,6 +33,22 @@ function App() {
           <DebugToggle />
         </div>
       </header>
+      <nav className="app-nav">
+        <button
+          type="button"
+          className={`app-nav-tab ${currentPage === 'eleves-groupes' ? 'app-nav-tab-active' : ''}`}
+          onClick={() => setCurrentPage('eleves-groupes')}
+        >
+          Élèves → Groupes
+        </button>
+        <button
+          type="button"
+          className={`app-nav-tab ${currentPage === 'groupes-chambres' ? 'app-nav-tab-active' : ''}`}
+          onClick={() => setCurrentPage('groupes-chambres')}
+        >
+          Groupes → Chambres
+        </button>
+      </nav>
       {ui.errorMessage && (
         <div className="app-banner app-banner-error">
           <span>{ui.errorMessage}</span>
@@ -34,50 +59,92 @@ function App() {
           <span>Mode lecture seule détecté : les modifications ne seront pas enregistrées.</span>
         </div>
       )}
-      <main className="app-main">
-        <section className="sidebar">
-          <StudentsPanel
-            selectedEleveId={selectedEleveId}
-            onSelectEleve={(id) => setSelectedEleveId(id)}
-          />
-        </section>
-        <section className="canvas-section">
-          {schemaOk ? (
-            <GroupsCanvas
+      {currentPage === 'eleves-groupes' && (
+        <main className="app-main">
+          <section className="sidebar">
+            <StudentsPanel
               selectedEleveId={selectedEleveId}
-              onEleveAssigned={() => setSelectedEleveId(null)}
+              onSelectEleve={(id) => setSelectedEleveId(id)}
             />
-          ) : (
-            <div className="panel canvas-panel">
+          </section>
+          <section className="canvas-section">
+            {schemaOk ? (
+              <GroupsCanvas
+                selectedEleveId={selectedEleveId}
+                onEleveAssigned={() => setSelectedEleveId(null)}
+                mode="eleves-groupes"
+              />
+            ) : (
+              <div className="panel canvas-panel">
+                <div className="panel-header">
+                  <h2>Groupes</h2>
+                </div>
+                <div className="empty-state">
+                  Schéma Grist incomplet. Corrigez la configuration des tables pour utiliser ce
+                  widget.
+                </div>
+              </div>
+            )}
+          </section>
+          <section className="rooms-section rooms-section-preview">
+            <div className="panel">
               <div className="panel-header">
-                <h2>Groupes</h2>
+                <h2>Étape suivante</h2>
               </div>
               <div className="empty-state">
-                Schéma Grist incomplet. Corrigez la configuration des tables pour utiliser ce
-                widget.
+                Une fois les élèves répartis dans les groupes, passez à l’onglet{' '}
+                <strong>Groupes → Chambres</strong> pour affecter chaque groupe à une chambre.
               </div>
             </div>
-          )}
-        </section>
-        <section className="rooms-section">
-          {schemaOk ? (
-            <>
+          </section>
+        </main>
+      )}
+      {currentPage === 'groupes-chambres' && (
+        <main className="app-main app-main-groupes-chambres">
+          <UnassignedStudentsBanner onGoToElevesGroupes={() => setCurrentPage('eleves-groupes')} />
+          <section className="sidebar groupes-sidebar">
+            {schemaOk ? (
+              <GroupsCanvas
+                selectedEleveId={null}
+                onEleveAssigned={() => {}}
+                mode="groupes-chambres"
+              />
+            ) : (
+              <div className="panel canvas-panel">
+                <div className="panel-header">
+                  <h2>Groupes</h2>
+                </div>
+                <div className="empty-state">Schéma Grist incomplet.</div>
+              </div>
+            )}
+          </section>
+          <section className="rooms-section rooms-section-full">
+            {schemaOk ? (
               <RoomsPanel />
-              <ExportPanel />
-            </>
-          ) : (
-            <div className="panel rooms-panel">
-              <div className="panel-header">
-                <h2>Chambres</h2>
+            ) : (
+              <div className="panel rooms-panel">
+                <div className="panel-header">
+                  <h2>Chambres</h2>
+                </div>
+                <div className="empty-state">Schéma Grist incomplet.</div>
               </div>
-              <div className="empty-state">
-                Schéma Grist incomplet. Corrigez la configuration des tables pour utiliser ce
-                widget.
-              </div>
-            </div>
-          )}
-        </section>
-      </main>
+            )}
+          </section>
+        </main>
+      )}
+    </div>
+  )
+}
+
+function UnassignedStudentsBanner({ onGoToElevesGroupes }: { onGoToElevesGroupes: () => void }) {
+  const { elevesSansGroupe } = useAppState()
+  if (elevesSansGroupe.length === 0) return null
+  return (
+    <div className="app-banner app-banner-info">
+      <span>
+        {elevesSansGroupe.length} élève(s) sans groupe. Affectez-les d’abord à un groupe dans
+        l’onglet <button type="button" className="app-nav-inline" onClick={onGoToElevesGroupes}>Élèves → Groupes</button>.
+      </span>
     </div>
   )
 }
@@ -129,11 +196,12 @@ function CompactToggle() {
   return (
     <button
       type="button"
-      className="toolbar-button"
+      className={`toolbar-button ${ui.compactMode ? 'toolbar-button-active' : ''}`}
       onClick={toggleCompactMode}
       aria-pressed={ui.compactMode}
+      title={ui.compactMode ? 'Désactiver le mode compact' : 'Activer le mode compact'}
     >
-      Mode compact
+      Mode compact {ui.compactMode ? '✓' : ''}
     </button>
   )
 }
@@ -143,13 +211,25 @@ function DebugToggle() {
   return (
     <button
       type="button"
-      className="toolbar-button"
+      className={`toolbar-button ${ui.debug.enabled ? 'toolbar-button-active' : ''}`}
       onClick={toggleDebug}
       aria-pressed={ui.debug.enabled}
+      title={ui.debug.enabled ? 'Désactiver le mode debug' : 'Activer le mode debug'}
     >
-      Debug
+      Mode debug {ui.debug.enabled ? '✓' : ''}
     </button>
   )
+}
+
+/** Affiche le nom d’un élève : complet (Prénom Nom) ou court (5 premières lettres du nom + initiale du prénom). */
+function formatStudentDisplayName(
+  e: { prenom: string; nom: string },
+  compact: boolean,
+): string {
+  if (!compact) return `${e.prenom} ${e.nom}`.trim()
+  const nomShort = e.nom.slice(0, 5)
+  const prenomInitial = e.prenom ? e.prenom.charAt(0).toUpperCase() + '.' : ''
+  return `${nomShort} ${prenomInitial}`.trim()
 }
 
 interface StudentsPanelProps {
@@ -158,13 +238,30 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, ui, gristDebugInfo } = useAppState()
+  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo } = useAppState()
+  const [selectedClass, setSelectedClass] = useState<string>('')
+  const filteredSansGroupe = useMemo(
+    () =>
+      selectedClass
+        ? elevesSansGroupe.filter((e) => e.classe === selectedClass)
+        : elevesSansGroupe,
+    [elevesSansGroupe, selectedClass],
+  )
   const cinqPremiers = eleves.slice(0, 5)
+  const handleUnassignDrop = async (evt: React.DragEvent) => {
+    if (ui.readOnly) return
+    const data = evt.dataTransfer.getData('text/plain')
+    if (!data.startsWith('student:')) return
+    const id = Number(data.split(':')[1])
+    if (!Number.isNaN(id)) {
+      await moveEleveToGroupe(id, null)
+    }
+  }
   return (
     <div className="panel students-panel">
       <div className="panel-header">
         <h2>Élèves non groupés</h2>
-        <div className="panel-subtitle">{elevesSansGroupe.length} élèves</div>
+        <div className="panel-subtitle">{filteredSansGroupe.length} élèves</div>
       </div>
       {ui.debug.enabled && (
         <div className="debug-five-eleves">
@@ -220,12 +317,37 @@ function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
           placeholder="Rechercher un élève…"
           // TODO: état contrôlé + filtrage
         />
-        <select className="input">
+        <select
+          className="input"
+          value={selectedClass}
+          onChange={(evt) => setSelectedClass(evt.target.value)}
+        >
           <option value="">Toutes les classes</option>
+          {classes.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
         </select>
       </div>
-      <div className="students-list">
-        {elevesSansGroupe.map((e) => (
+      <div
+        className="students-list students-list-dropzone"
+        onDragOver={(evt) => {
+          if (ui.readOnly) return
+          evt.preventDefault()
+          evt.currentTarget.classList.add('dropzone-active')
+        }}
+        onDragLeave={(evt) => {
+          if (!evt.currentTarget.contains(evt.relatedTarget as Node)) {
+            evt.currentTarget.classList.remove('dropzone-active')
+          }
+        }}
+        onDrop={(evt) => {
+          evt.currentTarget.classList.remove('dropzone-active')
+          handleUnassignDrop(evt)
+        }}
+      >
+        {filteredSansGroupe.map((e) => (
           <div
             key={e.id}
             className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''}`}
@@ -242,8 +364,10 @@ function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
             <div className="student-meta">{e.classe}</div>
           </div>
         ))}
-        {elevesSansGroupe.length === 0 && (
-          <div className="empty-state">Tous les élèves sont dans un groupe.</div>
+        {filteredSansGroupe.length === 0 && (
+          <div className="empty-state">
+            {selectedClass ? `Aucun élève non groupé dans la classe "${selectedClass}".` : 'Tous les élèves sont dans un groupe.'}
+          </div>
         )}
       </div>
     </div>
@@ -253,14 +377,20 @@ function StudentsPanel({ selectedEleveId, onSelectEleve }: StudentsPanelProps) {
 interface GroupsCanvasProps {
   selectedEleveId: number | null
   onEleveAssigned: () => void
+  mode: 'eleves-groupes' | 'groupes-chambres'
 }
 
-function GroupsCanvas({ selectedEleveId, onEleveAssigned }: GroupsCanvasProps) {
-  const { groupesAvecEleves, moveEleveToGroupe, ui } = useAppState()
+function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode }: GroupsCanvasProps) {
+  const { groupesAvecEleves, moveEleveToGroupe, createGroupe, removeGroupe, ui } = useAppState()
+  const handleDropOnNewGroup = async (eleveId: number) => {
+    const newId = await createGroupe()
+    await moveEleveToGroupe(eleveId, newId)
+    onEleveAssigned()
+  }
   return (
     <div className="panel canvas-panel">
       <div className="panel-header">
-        <h2>Groupes</h2>
+        <h2>{mode === 'eleves-groupes' ? 'Groupes' : 'Groupes (glissez vers les chambres)'}</h2>
       </div>
       <div className="canvas">
         {groupesAvecEleves.map((g) => (
@@ -277,7 +407,6 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned }: GroupsCanvasProps) {
               }
             }}
             onDragOver={(evt) => {
-              // Permettre le drop d’un élève (sauf en lecture seule).
               if (ui.readOnly) return
               evt.preventDefault()
             }}
@@ -293,18 +422,53 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned }: GroupsCanvasProps) {
               }
             }}
             onDragStart={(evt) => {
-              // Déplacement du groupe vers une chambre.
               evt.dataTransfer.setData('text/plain', `group:${g.id}`)
             }}
           >
             <div className="group-header">
               <span className="group-title">Groupe {g.numGroupe}</span>
               <span className="group-count">{g.eleves.length} él.</span>
+              {!ui.readOnly && (
+                <button
+                  type="button"
+                  className="group-delete-btn"
+                  title="Supprimer le groupe"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    if (!window.confirm(`Supprimer le groupe ${g.numGroupe} ? Les élèves seront retirés du groupe.`)) return
+                    await removeGroupe(g.id, g.eleves.map((e) => e.id))
+                  }}
+                >
+                  Supprimer
+                </button>
+              )}
             </div>
             <div className="group-body">
               {g.eleves.map((e) => (
-                <span key={e.id} className="group-student-pill">
-                  {e.prenom}
+                <span
+                  key={e.id}
+                  className="group-student-pill"
+                  draggable={!ui.readOnly}
+                  onDragStart={(evt) => {
+                    evt.stopPropagation()
+                    evt.dataTransfer.setData('text/plain', `student:${e.id}`)
+                  }}
+                >
+                  {formatStudentDisplayName(e, ui.compactMode)}
+                  {!ui.readOnly && (
+                    <button
+                      type="button"
+                      className="group-pill-remove"
+                      title="Retirer du groupe"
+                      onClick={async (evt) => {
+                        evt.stopPropagation()
+                        await moveEleveToGroupe(e.id, null)
+                        onEleveAssigned()
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
                 </span>
               ))}
               {g.eleves.length === 0 && (
@@ -313,10 +477,37 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned }: GroupsCanvasProps) {
             </div>
           </div>
         ))}
-        {groupesAvecEleves.length === 0 && (
+        {mode === 'eleves-groupes' && (
+          <div
+            className="group-card group-card-new"
+            onDragOver={(evt) => {
+              if (ui.readOnly) return
+              evt.preventDefault()
+            }}
+            onDrop={async (evt) => {
+              if (ui.readOnly) return
+              const data = evt.dataTransfer.getData('text/plain')
+              if (data.startsWith('student:')) {
+                const id = Number(data.split(':')[1])
+                if (!Number.isNaN(id)) await handleDropOnNewGroup(id)
+              }
+            }}
+            onDoubleClick={async () => {
+              if (ui.readOnly) return
+              if (selectedEleveId != null) await handleDropOnNewGroup(selectedEleveId)
+            }}
+          >
+            <div className="group-header">
+              <span className="group-title">Nouveau groupe</span>
+            </div>
+            <div className="group-body">
+              <span className="group-empty">Déposez un élève ici pour créer un groupe</span>
+            </div>
+          </div>
+        )}
+        {groupesAvecEleves.length === 0 && mode !== 'eleves-groupes' && (
           <div className="empty-state">
-            Aucun groupe pour l’instant. Créez des groupes depuis Grist ou ajoutez un bouton dédié
-            dans une prochaine version.
+            Aucun groupe. Passez par l’onglet « Élèves → Groupes » pour en créer.
           </div>
         )}
       </div>
@@ -325,7 +516,7 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned }: GroupsCanvasProps) {
 }
 
 function RoomsPanel() {
-  const { chambresAvecStats, moveGroupeToChambre, ui } = useAppState()
+  const { chambresAvecStats, groupesAvecEleves, moveGroupeToChambre, ui } = useAppState()
   return (
     <div className="panel rooms-panel">
       <div className="panel-header">
@@ -340,6 +531,8 @@ function RoomsPanel() {
       <div className="rooms-list">
         {chambresAvecStats.map((c) => {
           const full = c.capaciteRestante === 0
+          const groupesDansChambre = groupesAvecEleves.filter((g) => g.chambreId === c.id)
+          const elevesDansChambre = groupesDansChambre.flatMap((g) => g.eleves)
           return (
             <div
               key={c.id}
@@ -348,8 +541,6 @@ function RoomsPanel() {
               }`}
               draggable={false}
               onDragOver={(evt) => {
-                // Permettre le drop de groupe uniquement si la colonne Groupe.Chambre existe
-                // et que l'utilisateur a le droit de modifier.
                 if (!ui.hasGroupRoomLink || ui.readOnly) return
                 evt.preventDefault()
               }}
@@ -371,6 +562,23 @@ function RoomsPanel() {
                 Capacité {c.capacite} ·{' '}
                 {full ? 'Complet' : `${c.capaciteRestante} places restantes`}
               </div>
+              {elevesDansChambre.length > 0 && (
+                <div className="room-students">
+                  <div className="room-students-label">Élèves affectés</div>
+                  <ul className="room-students-list">
+                    {elevesDansChambre.map((e) => (
+                      <li key={e.id} className="room-student-item">
+                        {formatStudentDisplayName(e, ui.compactMode)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {elevesDansChambre.length === 0 && (
+                <div className="room-students room-students-empty">
+                  Aucun élève affecté
+                </div>
+              )}
             </div>
           )
         })}
@@ -380,42 +588,6 @@ function RoomsPanel() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function ExportPanel() {
-  const { groupesAvecEleves, chambresAvecStats, ui } = useAppState()
-
-  const lines: string[] = []
-  if (ui.hasGroupRoomLink) {
-    for (const chambre of chambresAvecStats) {
-      lines.push(`Chambre ${chambre.nomChambre} (capacité ${chambre.capacite})`)
-      const groupesDansChambre = groupesAvecEleves.filter((g) => g.chambreId === chambre.id)
-      for (const g of groupesDansChambre) {
-        const elevesNoms = g.eleves.map((e) => `${e.prenom} ${e.nom}`).join(', ')
-        lines.push(`  Groupe ${g.numGroupe}: ${elevesNoms}`)
-      }
-      lines.push('')
-    }
-  }
-  const exportText = lines.join('\n')
-
-  return (
-    <div className="panel export-panel">
-      <div className="panel-header">
-        <h2>Export (aperçu)</h2>
-      </div>
-      <textarea
-        className="export-textarea"
-        readOnly
-        value={
-          ui.hasGroupRoomLink
-            ? exportText ||
-              'Aucune chambre ou groupe assigné pour le moment.\nLes données apparaîtront ici une fois les groupes placés dans les chambres.'
-            : 'La colonne "Chambre" dans la table "Groupe" est absente.\nAjoutez-la pour obtenir un export par chambre.'
-        }
-      />
     </div>
   )
 }
