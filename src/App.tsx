@@ -349,7 +349,7 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ currentUser = '', isCurrentUser = (who) => !who || who === currentUser, selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes, lastErrorDetails } = useAppState()
+  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes, lastErrorDetails, currentUserIdentifiers, widgetSessionId, debugLocks } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const filteredSansGroupe = useMemo(() => {
@@ -408,6 +408,43 @@ function StudentsPanel({ currentUser = '', isCurrentUser = (who) => !who || who 
             )}
             <div className="debug-grist-row">
               <strong>Utilisateur effectif (currentUser) :</strong> {currentUser || '—'}
+            </div>
+            <div className="debug-grist-row">
+              <strong>currentUserIdentifiers :</strong>{' '}
+              {currentUserIdentifiers.length ? `[${currentUserIdentifiers.join(', ')}]` : '— (vide)'}
+            </div>
+            <div className="debug-grist-row">
+              <strong>widgetSessionId :</strong> <code className="debug-small">{widgetSessionId || '—'}</code>
+            </div>
+            <div className="debug-five-title">
+              Debug – Locks bruts ({debugLocks.length} ligne(s))
+            </div>
+            {debugLocks.length > 0 ? (
+              <div className="debug-grist-tables">
+                {debugLocks.slice(0, 15).map((l) => (
+                  <div key={l.id} className="debug-grist-row debug-small">
+                    id={l.id} {l.resourceType}#{l.resourceId} state={l.lockState} by=
+                    {l.createdByName || l.createdByEmail || '(vide)'} session=
+                    {l.widgetSessionId === widgetSessionId ? 'MOI' : l.widgetSessionId.slice(0, 12) + '…'}
+                  </div>
+                ))}
+                {debugLocks.length > 15 && (
+                  <div className="debug-grist-row debug-small">… et {debugLocks.length - 15} autre(s)</div>
+                )}
+              </div>
+            ) : (
+              <div className="debug-grist-row debug-warn">Aucun lock en base (ou table Lock non chargée).</div>
+            )}
+            <div className="debug-five-title">
+              Debug – Verrou par élève (5 premiers)
+            </div>
+            <div className="debug-grist-tables">
+              {cinqPremiers.map((e: EleveRecord) => (
+                <div key={e.id} className="debug-grist-row debug-small">
+                  id={e.id} {e.nom} · verrou=<strong>{e.verrou ?? '—'}</strong> isCurrentUser(verrou)=
+                  {String(isCurrentUser(e.verrou ?? undefined))} → affiche bloc « par X » : {e.verrou ? 'oui' : 'non'}
+                </div>
+              ))}
             </div>
             {eleves.some((e: EleveRecord) => e.verrou) && (
               <div className="debug-grist-row">

@@ -104,6 +104,8 @@ interface AppState {
   docUserLabel: string
   /** Dernière erreur technique détaillée (stack / message), visible en mode debug. */
   lastErrorDetails: string | null
+  /** Locks bruts (pour debug uniquement, affichage verrou / identité). */
+  debugLocks: LockRecord[]
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -824,6 +826,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     sessionUserInfo,
     docUserLabel,
     lastErrorDetails,
+    debugLocks: locks,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
