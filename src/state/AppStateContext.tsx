@@ -217,7 +217,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setChambres(mapChambres(docData, env.mapping))
 
         const locksList = mapLocks(docData, env.mapping)
-        setLocks(locksList)
+        setLocks((prev) => {
+          const fromServer = locksList
+          const ourSessionId = widgetSessionIdRef.current
+          const optimisticStillMissing = prev.filter(
+            (l) =>
+              l.widgetSessionId === ourSessionId &&
+              l.lockState === 'active' &&
+              !fromServer.some((s) => s.id === l.id),
+          )
+          return [...fromServer, ...optimisticStillMissing]
+        })
         setActionLogs(mapActionLogs(docData, env.mapping))
 
         // Dès qu'on a un lock créé par cette session avec user stamps Grist, utiliser son auteur comme currentUser.
@@ -455,6 +465,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const newLockId = result?.retValues?.[0]
         if (typeof newLockId === 'number') {
           lastLockIdByResourceRef.current.set(`${resourceType}:${resourceId}`, newLockId)
+          // Mise à jour optimiste : afficher tout de suite « Vous le manipulez » / nom dans le cadre.
+          const optimisticLock: LockRecord = {
+            id: newLockId,
+            resourceType,
+            resourceId,
+            resourceLabel,
+            widgetSessionId: widgetSessionIdRef.current,
+            lockState: 'active',
+            createdAt: now.toISOString(),
+            lastModifiedAt: now.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+            createdByName: currentUser || null,
+            createdByEmail: currentUserIdentifiers.find((x) => x.includes('@')) || null,
+            createdByUserID: null,
+            lastModifiedByName: null,
+            lastModifiedByEmail: null,
+            lastModifiedByUserID: null,
+          }
+          setLocks((prev) => [...prev, optimisticLock])
         }
         await refreshDataRef.current()
         return true
@@ -468,7 +497,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return null
       }
     },
-    [env.mapping, locks],
+    [currentUser, currentUserIdentifiers, env.mapping, locks],
   )
 
   const releaseLocksForResource = useCallback(
