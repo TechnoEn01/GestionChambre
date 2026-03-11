@@ -776,8 +776,9 @@ interface RoomsPanelProps {
 }
 
 /** Extrait le préfixe numérique du nom de chambre (ex. "571" → 57, "58A" → 58). */
-function getChambrePrefix(nomChambre: string): number {
-  const m = nomChambre.trim().match(/^(\d+)/)
+function getChambrePrefix(nomChambre: string | number | null | undefined): number {
+  const s = String(nomChambre ?? '').trim()
+  const m = s.match(/^(\d+)/)
   return m ? parseInt(m[1], 10) : 0
 }
 
