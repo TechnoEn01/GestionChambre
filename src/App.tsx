@@ -234,15 +234,16 @@ function DebugToggle() {
   )
 }
 
-/** Affiche le nom d’un élève : complet (Prénom Nom) ou court (5 premières lettres du nom + initiale du prénom). */
+/** Affiche le nom d’un élève : NOM  Prénom (ou format court en mode compact). */
 function formatStudentDisplayName(
   e: { prenom: string; nom: string },
   compact: boolean,
 ): string {
-  if (!compact) return `${e.prenom} ${e.nom}`.trim()
+  const sep = '\u00A0\u00A0 ' // espacement entre nom et prénom
+  if (!compact) return `${e.nom}${sep}${e.prenom}`.trim()
   const nomShort = e.nom.slice(0, 5)
   const prenomInitial = e.prenom ? e.prenom.charAt(0).toUpperCase() + '.' : ''
-  return `${nomShort} ${prenomInitial}`.trim()
+  return `${nomShort}${sep}${prenomInitial}`.trim()
 }
 
 interface StudentsPanelProps {
@@ -256,13 +257,25 @@ interface StudentsPanelProps {
 function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd }: StudentsPanelProps) {
   const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
-  const filteredSansGroupe = useMemo(
-    () =>
-      selectedClasses.length === 0
-        ? elevesSansGroupe
-        : elevesSansGroupe.filter((e) => selectedClasses.includes(e.classe)),
-    [elevesSansGroupe, selectedClasses],
-  )
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const filteredSansGroupe = useMemo(() => {
+    let list = elevesSansGroupe
+    if (selectedClasses.length > 0) {
+      list = list.filter((e) => selectedClasses.includes(e.classe))
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      list = list.filter(
+        (e) =>
+          e.nom.toLowerCase().includes(q) ||
+          e.prenom.toLowerCase().includes(q) ||
+          e.classe.toLowerCase().includes(q) ||
+          `${e.prenom} ${e.nom}`.toLowerCase().includes(q) ||
+          `${e.nom} ${e.prenom}`.toLowerCase().includes(q),
+      )
+    }
+    return list
+  }, [elevesSansGroupe, selectedClasses, searchQuery])
   const cinqPremiers = eleves.slice(0, 5)
   const handleUnassignDrop = async (evt: React.DragEvent) => {
     if (ui.readOnly) return
@@ -324,7 +337,7 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
             <ul className="debug-five-list">
               {cinqPremiers.map((e) => (
                 <li key={e.id}>
-                  {e.prenom} {e.nom} · {e.classe} · Groupe id: {e.groupeId ?? '—'}
+                  {e.nom}  {e.prenom} · {e.classe} · Groupe id: {e.groupeId ?? '—'}
                 </li>
               ))}
             </ul>
@@ -336,7 +349,9 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
           type="search"
           className="input"
           placeholder="Rechercher un élève…"
-          // TODO: état contrôlé + filtrage
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Rechercher par nom, prénom ou classe"
         />
         <div className="students-class-filter">
           <span className="students-class-filter-label">Classes à afficher</span>
@@ -393,7 +408,8 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
             onDragEnd={() => onStudentDragEnd()}
           >
             <div className="student-name">
-              {e.prenom} {e.nom}
+              <span className="student-nom">{e.nom}</span>
+              <span className="student-prenom">{e.prenom}</span>
             </div>
             <div className="student-meta">{e.classe}</div>
             {e.verrou && (
@@ -405,9 +421,11 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
         ))}
         {filteredSansGroupe.length === 0 && (
           <div className="empty-state">
-            {selectedClasses.length > 0
-              ? 'Aucun élève non groupé dans les classes sélectionnées.'
-              : 'Tous les élèves sont dans un groupe.'}
+            {searchQuery.trim()
+              ? 'Aucun élève ne correspond à la recherche.'
+              : selectedClasses.length > 0
+                ? 'Aucun élève non groupé dans les classes sélectionnées.'
+                : 'Tous les élèves sont dans un groupe.'}
           </div>
         )}
       </div>
