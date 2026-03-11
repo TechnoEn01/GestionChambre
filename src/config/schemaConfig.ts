@@ -27,11 +27,14 @@ export const defaultSchemaMapping: SchemaMapping = {
       prenom: 'Prenom',
       classe: 'Classe',
       groupeRef: 'Groupe',
-      // Colonnes legacy liées au verrouillage / audit.
-      // En V2, la source de vérité des verrous est la table Lock
-      // et l'audit la table ActionLog.
-      verrou: 'Verrou',
       sejour: 'Sejour',
+      // Optionnel : colonnes legacy (Verrou, LastModified*). Si absentes de la table Grist,
+      // ne pas les déclarer ici pour éviter KeyError à l'écriture.
+      // verrou: 'Verrou',
+      // lockedBy: 'LockedBy',
+      // lockedAt: 'LockedAt',
+      // lastModifiedBy: 'LastModifiedBy',
+      // lastModifiedAt: 'LastModifiedAt',
     },
   },
   groupe: {
