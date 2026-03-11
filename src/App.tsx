@@ -339,7 +339,7 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes } = useAppState()
+  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes, lastErrorDetails } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const filteredSansGroupe = useMemo(() => {
@@ -452,6 +452,16 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
                   id, Nom, Prenom, Classe, Groupe.
                 </div>
               )}
+            </div>
+          )}
+          {ui.errorMessage && lastErrorDetails && (
+            <div className="debug-grist-tables">
+              <div className="debug-grist-row">
+                <strong>Dernière erreur technique :</strong>
+              </div>
+              <pre className="debug-error-details">
+                {lastErrorDetails}
+              </pre>
             </div>
           )}
           {cinqPremiers.length === 0 ? (

@@ -98,6 +98,8 @@ interface AppState {
   /** Infos session (legacy) et label brut docInfo, pour compat avec l'UI actuelle. */
   sessionUserInfo: CurrentUserInfo | null
   docUserLabel: string
+  /** Dernière erreur technique détaillée (stack / message), visible en mode debug. */
+  lastErrorDetails: string | null
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -157,6 +159,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
 
   const [currentUser, setCurrentUser] = useState<string>('Anonyme')
+  const [lastErrorDetails, setLastErrorDetails] = useState<string | null>(null)
   const widgetSessionIdRef = useRef<string>(generateWidgetSessionId())
 
   // Legacy pour debug UI actuel
@@ -222,6 +225,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           isSyncing: false,
           errorMessage: 'Erreur lors de la lecture des données Grist.',
         }))
+        setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
       },
     )
     if (result?.refresh) refreshDataRef.current = result.refresh
@@ -377,6 +381,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           errorMessage: `Ressource déjà manipulée par ${l.createdByName || l.widgetSessionId}`,
         }))
+        setLastErrorDetails(
+          `Lock conflict on ${resourceType}#${resourceId} — winningLockId=${l.id}, widgetSessionId=${l.widgetSessionId}, createdAt=${l.createdAt}`,
+        )
         return null
       }
 
@@ -404,6 +411,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           errorMessage: "Impossible de verrouiller l'élément (Lock).",
         }))
+        setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
         return null
       }
     },
@@ -442,6 +450,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         await refreshDataRef.current()
       } catch (err) {
         console.error('[Composition Chambre] Erreur release lock :', err)
+        setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
       }
     },
     [env.mapping, locks],
@@ -540,6 +549,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           errorMessage:
             "Impossible d'enregistrer la modification (probable mode lecture seule ou manque de droits). Vérifiez dans Grist que vous avez le droit d'éditer le document et les tables Eleve / Groupe.",
         }))
+        setLastErrorDetails(String(error?.stack || error?.message || error))
         await logAction(
           env.mapping,
           'error',
@@ -592,6 +602,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           readOnly: true,
           errorMessage: message,
         }))
+        setLastErrorDetails(String(error?.stack || error?.message || error))
         await logAction(
           env.mapping,
           'error',
@@ -654,6 +665,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           errorMessage:
             "Impossible de supprimer le groupe (droits ou colonnes manquantes). Vérifiez l'accès en écriture.",
         }))
+        setLastErrorDetails(String(error?.stack || error?.message || error))
         await logAction(
           env.mapping,
           'error',
@@ -680,6 +692,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           errorMessage: "Impossible d'enregistrer la couleur du groupe.",
         }))
+        setLastErrorDetails(String(error?.stack || error?.message || error))
       }
     },
     [env.mapping],
@@ -716,6 +729,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     actionLogs,
     sessionUserInfo,
     docUserLabel,
+    lastErrorDetails,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
