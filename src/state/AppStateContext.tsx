@@ -92,6 +92,8 @@ interface AppState {
 
   /** utilisateur effectif utilisé par les verrous (affichage uniquement) */
   currentUser: string
+  /** Toutes les identités possibles pour "moi" (nom, email) pour comparer avec verrou/lockedBy. */
+  currentUserIdentifiers: string[]
   /** WidgetSessionId stable pour toute la durée de vie du widget. */
   widgetSessionId: string
   /** Logs bruts (pour debug éventuel). */
@@ -161,6 +163,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
 
   const [currentUser, setCurrentUser] = useState<string>('Anonyme')
+  const [currentUserIdentifiers, setCurrentUserIdentifiers] = useState<string[]>([])
   const [lastErrorDetails, setLastErrorDetails] = useState<string | null>(null)
   const widgetSessionIdRef = useRef<string>(generateWidgetSessionId())
   /** Id du dernier lock créé par ressource (pour libérer à coup sûr après drop). */
@@ -223,7 +226,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         )
         if (ourLock) {
           const identity = ourLock.createdByName || ourLock.createdByEmail || ''
-          if (identity) setCurrentUser(identity)
+          if (identity) {
+            setCurrentUser(identity)
+            setCurrentUserIdentifiers(
+              [ourLock.createdByName, ourLock.createdByEmail].filter(
+                (x): x is string => Boolean(x),
+              ),
+            )
+          }
         }
 
         // Supprimer les verrous expirés en base (l'historique est dans ActionLog).
@@ -237,6 +247,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const user = info?.user
         const label = user?.email || user?.name || 'Anonyme'
         setCurrentUser(label)
+        setCurrentUserIdentifiers(label ? [label] : [])
         setDocUserLabel(label)
         // On ne s'appuie plus sur SessionUser comme vérité, on la laisse à null pour l'instant.
         setSessionUserInfo(null)
@@ -807,6 +818,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     lockGroupe,
     unlockGroupe,
     currentUser,
+    currentUserIdentifiers,
     widgetSessionId: widgetSessionIdRef.current,
     actionLogs,
     sessionUserInfo,

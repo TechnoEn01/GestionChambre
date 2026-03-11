@@ -6,7 +6,12 @@ import type { EleveRecord, GroupeWithMembers } from './types/domain'
 type AppPage = 'eleves-groupes' | 'groupes-chambres'
 
 function App() {
-  const { ui, schemaOk, lockEleve, unlockEleve, lockGroupe, unlockGroupe, selectedSejour, setSelectedSejour, moveGroupeToChambre, currentUser } = useAppState()
+  const { ui, schemaOk, lockEleve, unlockEleve, lockGroupe, unlockGroupe, selectedSejour, setSelectedSejour, moveGroupeToChambre, currentUser, currentUserIdentifiers } = useAppState()
+  const isCurrentUser = useCallback(
+    (who: string | undefined) =>
+      !who || who === currentUser || currentUserIdentifiers.includes(who),
+    [currentUser, currentUserIdentifiers],
+  )
   const [selectedEleveId, setSelectedEleveId] = useState<number | null>(null)
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState<AppPage>('eleves-groupes')
@@ -149,6 +154,7 @@ function App() {
           <section className="sidebar">
             <StudentsPanel
               currentUser={currentUser}
+              isCurrentUser={isCurrentUser}
               selectedEleveId={selectedEleveId}
               onSelectEleve={handleSelectEleve}
               draggedStudentId={draggedStudentId}
@@ -162,6 +168,7 @@ function App() {
             {schemaOk ? (
               <GroupsCanvas
                 currentUser={currentUser}
+                isCurrentUser={isCurrentUser}
                 selectedEleveId={selectedEleveId}
                 onEleveAssigned={handleEleveAssigned}
                 mode="eleves-groupes"
@@ -191,6 +198,7 @@ function App() {
             {schemaOk ? (
               <GroupsCanvas
                 currentUser={currentUser}
+                isCurrentUser={isCurrentUser}
                 selectedEleveId={null}
                 onEleveAssigned={() => {}}
                 mode="groupes-chambres"
@@ -329,6 +337,8 @@ function formatStudentDisplayName(
 
 interface StudentsPanelProps {
   currentUser?: string
+  /** Retourne true si l'identité (verrou) correspond à l'utilisateur courant (nom ou email). */
+  isCurrentUser?: (who: string | undefined) => boolean
   selectedEleveId: number | null
   onSelectEleve: (id: number | null) => void
   draggedStudentId: number | null
@@ -338,7 +348,7 @@ interface StudentsPanelProps {
   onStudentsListScroll?: (scrollTop: number) => void
 }
 
-function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
+function StudentsPanel({ currentUser = '', isCurrentUser = (who) => !who || who === currentUser, selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
   const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes, lastErrorDetails } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
@@ -536,12 +546,12 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
         {filteredSansGroupe.map((e: EleveRecord) => (
           <div
             key={e.id}
-            className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''} ${draggedStudentId === e.id ? 'student-card-dragging' : ''} ${e.verrou && e.verrou !== currentUser ? 'student-card-locked-by-other' : ''}`}
-            draggable={!ui.readOnly && (!e.verrou || e.verrou === currentUser)}
+            className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''} ${draggedStudentId === e.id ? 'student-card-dragging' : ''} ${e.verrou && !isCurrentUser(e.verrou) ? 'student-card-locked-by-other' : ''}`}
+            draggable={!ui.readOnly && (!e.verrou || isCurrentUser(e.verrou))}
             onClick={() => onSelectEleve(selectedEleveId === e.id ? null : e.id)}
             onDragStart={(evt) => {
               if (ui.readOnly) return
-              if (e.verrou && e.verrou !== currentUser) {
+              if (e.verrou && !isCurrentUser(e.verrou)) {
                 evt.preventDefault()
                 return
               }
@@ -558,7 +568,7 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
             {e.verrou && (
               <div className="student-lock" title={e.lockedAt ? `Verrouillé depuis ${e.lockedAt}` : `Verrouillé par ${e.verrou}`}>
                 <span className="student-lock-by">
-                  {e.verrou === currentUser ? 'Vous le manipulez' : `par ${e.verrou}`}
+                  {isCurrentUser(e.verrou) ? 'Vous le manipulez' : `par ${e.verrou}`}
                 </span>
               </div>
             )}
@@ -581,6 +591,8 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
 interface GroupsCanvasProps {
   /** Utilisateur courant (email ou nom) pour afficher/verifier les verrous. */
   currentUser?: string
+  /** Retourne true si l'identité correspond à l'utilisateur courant (nom ou email). */
+  isCurrentUser?: (who: string | undefined) => boolean
   selectedEleveId: number | null
   /** Appelé après affectation d’un élève à un groupe (avec l’id de l’élève pour déverrouiller). */
   onEleveAssigned: (assignedEleveId?: number) => void
@@ -597,7 +609,7 @@ interface GroupsCanvasProps {
   onGroupsCanvasScroll?: (scrollTop: number) => void
 }
 
-function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode, selectedGroupId = null, onSelectGroup, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
+function GroupsCanvas({ currentUser = '', isCurrentUser = (who) => !who || who === currentUser, selectedEleveId, onEleveAssigned, mode, selectedGroupId = null, onSelectGroup, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
   const { groupesAvecEleves, moveEleveToGroupe, createGroupe, removeGroupe, updateGroupeCouleur, ui } = useAppState()
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null)
   const handleDropOnNewGroup = async (eleveId: number) => {
@@ -630,9 +642,9 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
           return (
           <div
             key={g.id}
-            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''} ${mode === 'groupes-chambres' && selectedGroupId === g.id ? 'group-card-selected' : ''} ${g.lockedBy && g.lockedBy !== currentUser ? 'group-card-locked-by-other' : ''}`}
+            className={`group-card ${dragOverGroupId === g.id && draggedStudentId != null ? 'group-card-drag-over' : ''} ${draggedGroupId === g.id ? 'group-card-dragging' : ''} ${mode === 'groupes-chambres' && selectedGroupId === g.id ? 'group-card-selected' : ''} ${g.lockedBy && !isCurrentUser(g.lockedBy) ? 'group-card-locked-by-other' : ''}`}
             style={{ borderColor, backgroundColor: bgColor }}
-            draggable={!ui.readOnly && (!g.lockedBy || g.lockedBy === currentUser)}
+            draggable={!ui.readOnly && (!g.lockedBy || isCurrentUser(g.lockedBy))}
             onClick={() => handleGroupClick(g)}
             onDoubleClick={async () => {
               if (ui.readOnly) return
@@ -674,7 +686,7 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
               <span className="group-count">{g.eleves.length} él.</span>
               {g.lockedBy && (
                 <span className="group-locked-by" title={g.lockedAt ? `Verrouillé depuis ${g.lockedAt}` : undefined}>
-                  {g.lockedBy === currentUser ? 'Vous le manipulez' : `Manipulé par ${g.lockedBy}`}
+                  {isCurrentUser(g.lockedBy) ? 'Vous le manipulez' : `Manipulé par ${g.lockedBy}`}
                 </span>
               )}
               {!ui.readOnly && (
@@ -713,7 +725,7 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
                   {formatStudentDisplayName(e, ui.compactMode)}
                   {e.verrou && (
                     <span className="group-pill-lock" title={`Verrouillé par ${e.verrou}`}>
-                      🔒 <span className="group-pill-lock-by">{e.verrou === currentUser ? 'vous' : e.verrou}</span>
+                      🔒 <span className="group-pill-lock-by">{isCurrentUser(e.verrou) ? 'vous' : e.verrou}</span>
                     </span>
                   )}
                   {!ui.readOnly && (
