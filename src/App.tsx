@@ -1,5 +1,5 @@
 import './App.css'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAppState } from './state/AppStateContext'
 
 type AppPage = 'eleves-groupes' | 'groupes-chambres'
@@ -19,6 +19,22 @@ function App() {
     if (draggedStudentId != null) unlockEleve(draggedStudentId)
     setDraggedStudentId(null)
   }
+
+  const refStudentsList = useRef<HTMLDivElement>(null)
+  const refGroupsCanvas = useRef<HTMLDivElement>(null)
+  const isSyncingScroll = useRef(false)
+  const handleStudentsListScroll = useCallback((scrollTop: number) => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    if (refGroupsCanvas.current) refGroupsCanvas.current.scrollTop = scrollTop
+    requestAnimationFrame(() => { isSyncingScroll.current = false })
+  }, [])
+  const handleGroupsCanvasScroll = useCallback((scrollTop: number) => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    if (refStudentsList.current) refStudentsList.current.scrollTop = scrollTop
+    requestAnimationFrame(() => { isSyncingScroll.current = false })
+  }, [])
 
   return (
     <div className={`app-root app-theme-${ui.theme} ${ui.compactMode ? 'app-compact' : ''}`}>
@@ -97,6 +113,8 @@ function App() {
               draggedStudentId={draggedStudentId}
               onStudentDragStart={handleStudentDragStart}
               onStudentDragEnd={handleStudentDragEnd}
+              studentsListRef={refStudentsList}
+              onStudentsListScroll={handleStudentsListScroll}
             />
           </section>
           <section className="canvas-section">
@@ -108,6 +126,8 @@ function App() {
                 draggedStudentId={draggedStudentId}
                 onStudentDragStart={handleStudentDragStart}
                 onStudentDragEnd={handleStudentDragEnd}
+                groupsCanvasRef={refGroupsCanvas}
+                onGroupsCanvasScroll={handleGroupsCanvasScroll}
               />
             ) : (
               <div className="panel canvas-panel">
@@ -252,9 +272,11 @@ interface StudentsPanelProps {
   draggedStudentId: number | null
   onStudentDragStart: (id: number) => void
   onStudentDragEnd: () => void
+  studentsListRef?: React.RefObject<HTMLDivElement | null>
+  onStudentsListScroll?: (scrollTop: number) => void
 }
 
-function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd }: StudentsPanelProps) {
+function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
   const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
@@ -378,7 +400,9 @@ function StudentsPanel({ selectedEleveId, onSelectEleve, draggedStudentId, onStu
         </div>
       </div>
       <div
+        ref={studentsListRef}
         className="students-list students-list-dropzone"
+        onScroll={onStudentsListScroll ? (evt) => onStudentsListScroll(evt.currentTarget.scrollTop) : undefined}
         onDragOver={(evt) => {
           if (ui.readOnly) return
           evt.preventDefault()
@@ -443,9 +467,11 @@ interface GroupsCanvasProps {
   draggedGroupId?: number | null
   onGroupDragStart?: (id: number) => void
   onGroupDragEnd?: () => void
+  groupsCanvasRef?: React.RefObject<HTMLDivElement | null>
+  onGroupsCanvasScroll?: (scrollTop: number) => void
 }
 
-function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd }: GroupsCanvasProps) {
+function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId = null, onStudentDragStart, onStudentDragEnd, draggedGroupId = null, onGroupDragStart, onGroupDragEnd, groupsCanvasRef, onGroupsCanvasScroll }: GroupsCanvasProps) {
   const { groupesAvecEleves, moveEleveToGroupe, createGroupe, removeGroupe, updateGroupeCouleur, ui } = useAppState()
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null)
   const handleDropOnNewGroup = async (eleveId: number) => {
@@ -458,7 +484,11 @@ function GroupsCanvas({ selectedEleveId, onEleveAssigned, mode, draggedStudentId
       <div className="panel-header">
         <h2>{mode === 'eleves-groupes' ? 'Groupes' : 'Groupes (glissez vers les chambres)'}</h2>
       </div>
-      <div className="canvas">
+      <div
+        ref={groupsCanvasRef}
+        className="canvas"
+        onScroll={onGroupsCanvasScroll ? (evt) => onGroupsCanvasScroll(evt.currentTarget.scrollTop) : undefined}
+      >
         {groupesAvecEleves.map((g) => {
           const borderColor = g.couleur && /^#?[0-9A-Fa-f]{6}$/.test(g.couleur.replace('#', '')) ? (g.couleur.startsWith('#') ? g.couleur : `#${g.couleur}`) : '#4f46e5'
           const bgColor = `${borderColor}18`

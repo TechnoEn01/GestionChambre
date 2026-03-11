@@ -253,20 +253,27 @@ export async function updateGroupeCouleur(
   ])
 }
 
-/** Crée un nouveau groupe dans Grist et retourne son id. */
+/** Crée un nouveau groupe dans Grist et retourne son id. initialCouleur au format hex #rrggbb (optionnel). */
 export async function createGroupe(
   nextNumGroupe: number,
   sejour: 1 | 2,
   mapping: SchemaMapping,
+  initialCouleur?: string,
 ): Promise<number> {
   const api = getDocApi()
   if (!api) {
     throw new Error("API Grist indisponible (docApi).")
   }
+  const hex =
+    initialCouleur && /^#?[0-9A-Fa-f]{6}$/.test(initialCouleur.replace('#', ''))
+      ? initialCouleur.startsWith('#')
+        ? initialCouleur
+        : `#${initialCouleur}`
+      : '#4f46e5'
   const { groupe } = mapping
   const fields: Record<string, any> = {
     [groupe.columns.numGroupe]: nextNumGroupe,
-    [groupe.columns.couleur]: '#4f46e5',
+    [groupe.columns.couleur]: hex,
     [groupe.columns.ouvert]: true,
   }
   if (groupe.columns.sejour) {
