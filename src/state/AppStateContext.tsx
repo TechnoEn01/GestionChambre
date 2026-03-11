@@ -27,6 +27,7 @@ import {
   mapChambres,
   mapLocks,
   mapActionLogs,
+  markExpiredLocks,
   assignEleveToGroupe as assignEleveToGroupeApi,
   assignGroupeToChambre as assignGroupeToChambreApi,
   createGroupe as createGroupeApi,
@@ -162,6 +163,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<string>('Anonyme')
   const [lastErrorDetails, setLastErrorDetails] = useState<string | null>(null)
   const widgetSessionIdRef = useRef<string>(generateWidgetSessionId())
+  /** Id du dernier lock créé par ressource (pour libérer à coup sûr après drop). */
+  const lastLockIdByResourceRef = useRef<Map<string, number>>(new Map())
 
   // Legacy pour debug UI actuel
   const [sessionUserInfo, setSessionUserInfo] = useState<CurrentUserInfo | null>(null)
@@ -208,8 +211,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setGroupes(mapGroupes(docData, env.mapping))
         setChambres(mapChambres(docData, env.mapping))
 
-        setLocks(mapLocks(docData, env.mapping))
+        const locksList = mapLocks(docData, env.mapping)
+        setLocks(locksList)
         setActionLogs(mapActionLogs(docData, env.mapping))
+
+        // Marquer en Grist les verrous expirés (LockState → 'expired') pour ne pas laisser la table grossir.
+        if (locksList.length > 0) {
+          markExpiredLocks(locksList, env.mapping)
+            .then(() => refreshDataRef.current?.())
+            .catch(() => {})
+        }
       },
       (info) => {
         const user = info?.user
@@ -249,7 +260,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (!winning) {
         return { ...e, verrou: undefined, lockedAt: undefined }
       }
-      const lockedBy = winning.createdByName || winning.widgetSessionId || undefined
+      const lockedBy =
+        winning.createdByName ||
+        winning.createdByEmail ||
+        winning.widgetSessionId ||
+        undefined
       const lockedAt = winning.createdAt || winning.lastModifiedAt || undefined
       return { ...e, verrou: lockedBy, lockedAt }
     })
@@ -267,7 +282,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (!winning) {
         return { ...g, lockedBy: undefined, lockedAt: undefined }
       }
-      const lockedBy = winning.createdByName || winning.widgetSessionId || undefined
+      const lockedBy =
+        winning.createdByName ||
+        winning.createdByEmail ||
+        winning.widgetSessionId ||
+        undefined
       const lockedAt = winning.createdAt || winning.lastModifiedAt || undefined
       return { ...g, lockedBy, lockedAt }
     })
@@ -389,7 +408,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        await api.applyUserActions([
+        const result = await api.applyUserActions([
           [
             'AddRecord',
             lockTable.table,
@@ -409,6 +428,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             })(),
           ],
         ])
+        const newLockId = result?.retValues?.[0]
+        if (typeof newLockId === 'number') {
+          lastLockIdByResourceRef.current.set(`${resourceType}:${resourceId}`, newLockId)
+        }
         await refreshDataRef.current()
         return true
       } catch (err) {
@@ -432,8 +455,37 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       const lockTable = mapping.lock
       const now = new Date()
-      // Recharger les locks depuis le serveur pour être sûr d'avoir le lock qu'on vient de créer
-      // (le state React peut ne pas être à jour encore).
+      const key = `${resourceType}:${resourceId}`
+
+      // 1) Si on a mémorisé l'id du lock qu'on vient de créer, le libérer directement (fiable).
+      const storedLockId = lastLockIdByResourceRef.current.get(key)
+      if (typeof storedLockId === 'number') {
+        try {
+          const update: Record<string, any> = {
+            [lockTable.columns.lockState]: 'released',
+          }
+          if (lockTable.columns.expiresAt) {
+            update[lockTable.columns.expiresAt] = now.toISOString()
+          }
+          await api.applyUserActions([
+            ['UpdateRecord', lockTable.table, storedLockId, update],
+          ])
+          lastLockIdByResourceRef.current.delete(key)
+          await refreshDataRef.current()
+          return
+        } catch (err) {
+          console.error('[Composition Chambre] Erreur release lock (par id) :', err)
+          setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
+          setUi((prev) => ({
+            ...prev,
+            errorMessage: "Impossible de libérer le verrou (Lock). Vérifiez la colonne LockState.",
+          }))
+          lastLockIdByResourceRef.current.delete(key)
+          return
+        }
+      }
+
+      // 2) Sinon, recharger les locks et libérer ceux de notre session.
       let currentLocks: LockRecord[]
       try {
         const docData = await fetchDocData(mapping)
@@ -466,6 +518,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.error('[Composition Chambre] Erreur release lock :', err)
         setLastErrorDetails(String((err as any)?.stack || (err as any)?.message || err))
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: "Impossible de libérer le verrou (Lock). Vérifiez la colonne LockState.",
+        }))
       }
     },
     [env.mapping],
