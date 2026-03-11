@@ -170,6 +170,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const widgetSessionIdRef = useRef<string>(generateWidgetSessionId())
   /** Id du dernier lock créé par ressource (pour libérer à coup sûr après drop). */
   const lastLockIdByResourceRef = useRef<Map<string, number>>(new Map())
+  /** Locks actifs créés par cette session : réinjectés à chaque merge pour ne jamais les faire disparaître. */
+  const optimisticLocksRef = useRef<Map<number, LockRecord>>(new Map())
 
   // Legacy pour debug UI actuel
   const [sessionUserInfo, setSessionUserInfo] = useState<CurrentUserInfo | null>(null)
@@ -217,16 +219,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setChambres(mapChambres(docData, env.mapping))
 
         const locksList = mapLocks(docData, env.mapping)
-        setLocks((prev) => {
+        setLocks(() => {
           const fromServer = locksList
-          const ourSessionId = widgetSessionIdRef.current
-          const optimisticStillMissing = prev.filter(
-            (l) =>
-              l.widgetSessionId === ourSessionId &&
-              l.lockState === 'active' &&
-              !fromServer.some((s) => s.id === l.id),
-          )
-          return [...fromServer, ...optimisticStillMissing]
+          const ourOptimistic = Array.from(optimisticLocksRef.current.values())
+          const fromServerIds = new Set(fromServer.map((s) => s.id))
+          const toAdd = ourOptimistic.filter((l) => !fromServerIds.has(l.id))
+          return [...fromServer, ...toAdd]
         })
         setActionLogs(mapActionLogs(docData, env.mapping))
 
@@ -465,7 +463,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const newLockId = result?.retValues?.[0]
         if (typeof newLockId === 'number') {
           lastLockIdByResourceRef.current.set(`${resourceType}:${resourceId}`, newLockId)
-          // Mise à jour optimiste : afficher tout de suite « Vous le manipulez » / nom dans le cadre.
           const optimisticLock: LockRecord = {
             id: newLockId,
             resourceType,
@@ -483,33 +480,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             lastModifiedByEmail: null,
             lastModifiedByUserID: null,
           }
+          optimisticLocksRef.current.set(newLockId, optimisticLock)
           setLocks((prev) => [...prev, optimisticLock])
         }
         await refreshDataRef.current()
-        // Réappliquer le lock optimiste si le refresh l'a écrasé (race: onData a pu utiliser un state pas encore mis à jour).
-        if (typeof newLockId === 'number') {
-          const optimisticLock: LockRecord = {
-            id: newLockId,
-            resourceType,
-            resourceId,
-            resourceLabel,
-            widgetSessionId: widgetSessionIdRef.current,
-            lockState: 'active',
-            createdAt: now.toISOString(),
-            lastModifiedAt: now.toISOString(),
-            expiresAt: expiresAt.toISOString(),
-            createdByName: currentUser || null,
-            createdByEmail: currentUserIdentifiers.find((x) => x.includes('@')) || null,
-            createdByUserID: null,
-            lastModifiedByName: null,
-            lastModifiedByEmail: null,
-            lastModifiedByUserID: null,
-          }
-          setLocks((prev) => {
-            if (prev.some((l) => l.id === newLockId)) return prev
-            return [...prev, optimisticLock]
-          })
-        }
         return true
       } catch (err) {
         console.error('[Composition Chambre] Erreur création lock :', err)
@@ -548,6 +522,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             ['UpdateRecord', lockTable.table, storedLockId, update],
           ])
           lastLockIdByResourceRef.current.delete(key)
+          optimisticLocksRef.current.delete(storedLockId)
           await refreshDataRef.current()
           return
         } catch (err) {
@@ -558,6 +533,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             errorMessage: "Impossible de libérer le verrou (Lock). Vérifiez la colonne LockState.",
           }))
           lastLockIdByResourceRef.current.delete(key)
+          optimisticLocksRef.current.delete(storedLockId)
           return
         }
       }
@@ -575,6 +551,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const resourceLocks = getLocksForResource(currentLocks, resourceType, resourceId)
 
       const actions: any[] = []
+      const releasedIds: number[] = []
       for (const l of resourceLocks) {
         if (!isLockActive(l, now)) continue
         if (l.widgetSessionId === widgetSessionIdRef.current) {
@@ -585,12 +562,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             update[lockTable.columns.expiresAt] = now.toISOString()
           }
           actions.push(['UpdateRecord', lockTable.table, l.id, update])
+          releasedIds.push(l.id)
         }
       }
       if (actions.length === 0) return
 
       try {
         await api.applyUserActions(actions)
+        releasedIds.forEach((id) => optimisticLocksRef.current.delete(id))
         await refreshDataRef.current()
       } catch (err) {
         console.error('[Composition Chambre] Erreur release lock :', err)
