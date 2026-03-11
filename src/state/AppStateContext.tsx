@@ -30,7 +30,7 @@ import {
   setEleveVerrou,
   getGristEnvironment,
 } from '../grist/gristClient'
-import { pickUnusedGroupColor } from '../config/groupColors'
+import { getNewGroupColor } from '../config/groupColors'
 
 /** Infos brutes reçues de Grist, pour le debug (noms de tables et colonnes). */
 export interface GristDebugInfo {
@@ -311,7 +311,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const usedColors = filteredGroupes
       .map((g) => g.couleur)
       .filter((c): c is string => Boolean(c))
-    const initialCouleur = pickUnusedGroupColor(usedColors)
+    const initialCouleur = getNewGroupColor(filteredGroupes.length, usedColors)
     const newId = await createGroupe(
       nextNum,
       ui.selectedSejour,

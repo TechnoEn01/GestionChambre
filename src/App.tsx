@@ -27,13 +27,13 @@ function App() {
     if (isSyncingScroll.current) return
     isSyncingScroll.current = true
     if (refGroupsCanvas.current) refGroupsCanvas.current.scrollTop = scrollTop
-    requestAnimationFrame(() => { isSyncingScroll.current = false })
+    setTimeout(() => { isSyncingScroll.current = false }, 0)
   }, [])
   const handleGroupsCanvasScroll = useCallback((scrollTop: number) => {
     if (isSyncingScroll.current) return
     isSyncingScroll.current = true
     if (refStudentsList.current) refStudentsList.current.scrollTop = scrollTop
-    requestAnimationFrame(() => { isSyncingScroll.current = false })
+    setTimeout(() => { isSyncingScroll.current = false }, 0)
   }, [])
 
   return (

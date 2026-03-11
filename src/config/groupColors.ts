@@ -35,3 +35,19 @@ export function pickUnusedGroupColor(usedHexColors: string[]): string {
   }
   return fallback
 }
+
+/**
+ * Couleur pour un nouveau groupe : première non utilisée, ou par index si les
+ * groupes existants ont tous la même couleur (ex. colonne Couleur absente dans Grist).
+ */
+export function getNewGroupColor(
+  existingGroupCount: number,
+  usedHexColors: string[],
+): string {
+  const used = usedHexColors.map(normalizeHex).filter((h) => h.length === 6)
+  const allSame = used.length > 0 && used.every((h) => h === used[0])
+  if (allSame) {
+    return GROUP_COLORS_PALETTE[existingGroupCount % GROUP_COLORS_PALETTE.length] ?? GROUP_COLORS_PALETTE[0]!
+  }
+  return pickUnusedGroupColor(usedHexColors)
+}
