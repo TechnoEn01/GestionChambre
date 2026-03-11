@@ -8,19 +8,24 @@ export interface EleveRecord {
   prenom: string
   classe: string
   groupeId: GroupeId | null
-  /** Identifiant de l'utilisateur ayant verrouillé l'élève (Verrou ou LockedBy), ou null si non verrouillé. */
+  /**
+   * Champ hérité de la V1 (colonne Verrou/LockedBy sur Eleve).
+   * En V2, la source de vérité des verrous est la table Lock.
+   * TODO V2+: ne plus se baser sur ce champ côté métier, seulement pour compat UI si besoin.
+   */
   verrou?: string | null
-  /** Numéro du séjour (1 ou 2) auquel participe l'élève. */
+  /** Numéro du séjour (1 ou 2) auquel participe l'élève (hérité, ignoré en V2 si inutile). */
   sejour?: 1 | 2
-  /** Verrouillage coopératif : qui manipule actuellement (LockedBy). */
+  /**
+   * Champs dérivés potentiellement remplis depuis la table Eleve (LockedBy / LockedAt / LastModified*).
+   * En V2, la source de vérité des verrous est la table Lock et celle de l'audit la table ActionLog.
+   * Ces champs peuvent encore être utilisés comme "view model" pratique, mais ne doivent pas être
+   * considérés comme autorité métier.
+   */
   lockedBy?: string | null
-  /** Date/heure début verrouillage (LockedAt). */
   lockedAt?: string | null
-  /** Dernier utilisateur ayant modifié l'élève (LastModifiedBy). */
   lastModifiedBy?: string | null
-  /** Date/heure dernière modification (LastModifiedAt). */
   lastModifiedAt?: string | null
-  /** État optionnel : free, locked, grouped, etc. */
   status?: string | null
 }
 
@@ -32,17 +37,12 @@ export interface GroupeRecord {
   xPiton: number | null
   yPiton: number | null
   chambreId?: ChambreId | null
-  /** Numéro du séjour (1 ou 2) auquel le groupe appartient. */
+  /** Numéro du séjour (1 ou 2) auquel le groupe appartient (hérité, ignoré en V2 si inutile). */
   sejour?: 1 | 2
-  /** Verrouillage coopératif : qui manipule actuellement (LockedBy). */
   lockedBy?: string | null
-  /** Date/heure début verrouillage (LockedAt). */
   lockedAt?: string | null
-  /** Dernier utilisateur ayant modifié le groupe (LastModifiedBy). */
   lastModifiedBy?: string | null
-  /** Date/heure dernière modification (LastModifiedAt). */
   lastModifiedAt?: string | null
-  /** État optionnel : free, locked, etc. */
   status?: string | null
 }
 
@@ -50,11 +50,8 @@ export interface ChambreRecord {
   id: ChambreId
   nomChambre: string
   capacite: number
-  /** Dernier utilisateur ayant modifié l'affectation (LastModifiedBy). */
   lastModifiedBy?: string | null
-  /** Date/heure dernière modification (LastModifiedAt). */
   lastModifiedAt?: string | null
-  /** État optionnel. */
   status?: string | null
 }
 
@@ -66,6 +63,65 @@ export interface SessionUserRecord {
   CreatedAt: string
   WidgetSessionId: string
   Active: boolean
+}
+
+/**
+ * Représentation d'un verrou dans la table Lock.
+ * Les colonnes CreatedBy* / LastModifiedBy* sont renseignées automatiquement
+ * par Grist (user stamps) au moment de l'écriture : l'identité n'est donc
+ * connue qu'APRÈS la création/modification de la ligne, jamais "à l'avance".
+ */
+export type LockState = 'active' | 'released' | 'expired'
+
+export interface LockRecord {
+  id: number
+  resourceType: 'Eleve' | 'Groupe'
+  resourceId: number
+  resourceLabel: string
+  widgetSessionId: string
+  lockState: LockState
+  createdAt: string
+  lastModifiedAt: string
+  expiresAt: string | null
+  // Stamps auteur / modificateur gérés par Grist (non édités par le widget) :
+  createdByName?: string | null
+  createdByEmail?: string | null
+  createdByUserID?: string | null
+  lastModifiedByName?: string | null
+  lastModifiedByEmail?: string | null
+  lastModifiedByUserID?: string | null
+}
+
+/**
+ * Entrée d'audit dans la table ActionLog.
+ * Là encore, CreatedBy* est renseigné par Grist.
+ */
+export type ActionType =
+  | 'lock_start'
+  | 'lock_refresh'
+  | 'lock_release'
+  | 'move_eleve'
+  | 'move_groupe'
+  | 'group_to_chambre'
+  | 'create_groupe'
+  | 'delete_groupe'
+  | 'error'
+
+export interface ActionLogRecord {
+  id: number
+  actionType: ActionType
+  resourceType: 'Eleve' | 'Groupe' | 'Chambre'
+  resourceId: number | null
+  fromGroup?: number | null
+  toGroup?: number | null
+  fromChambre?: number | null
+  toChambre?: number | null
+  widgetSessionId: string
+  details?: string
+  createdAt: string
+  createdByName?: string | null
+  createdByEmail?: string | null
+  createdByUserID?: string | null
 }
 
 export interface ChambreWithStats extends ChambreRecord {

@@ -16,26 +16,27 @@ import type {
   GroupeWithMembers,
   UiState,
   ThemeMode,
+  LockRecord,
+  ActionLogRecord,
 } from '../types/domain'
 import {
   subscribeToDocData,
   mapEleves,
   mapGroupes,
   mapChambres,
-  assignEleveToGroupe,
-  assignGroupeToChambre,
-  createGroupe,
+  mapLocks,
+  mapActionLogs,
+  assignEleveToGroupe as assignEleveToGroupeApi,
+  assignGroupeToChambre as assignGroupeToChambreApi,
+  createGroupe as createGroupeApi,
   removeGroupe as removeGroupeApi,
   updateGroupeCouleur as updateGroupeCouleurApi,
-  setEleveVerrou,
-  setGroupeLock,
-  clearGroupeLock,
-  ensureSessionUser,
   getGristEnvironment,
+  getDocApi,
+  isLockActive,
   logAction,
   type CurrentUserInfo,
 } from '../grist/gristClient'
-import { getNewGroupColor } from '../config/groupColors'
 
 /** Infos brutes reçues de Grist, pour le debug (noms de tables et colonnes). */
 export interface GristDebugInfo {
@@ -43,6 +44,8 @@ export interface GristDebugInfo {
   eleveRowCount: number
   eleveColumns: string[]
 }
+
+type ResourceType = 'Eleve' | 'Groupe'
 
 interface AppState {
   ui: UiState
@@ -63,7 +66,7 @@ interface AppState {
   toggleDebug: () => void
   /** Réglage du nombre de chambres par ligne (mode non compact). */
   setRoomsPerLine: (n: number) => void
-  /** Séjour affiché (1 ou 2). */
+  /** Séjour affiché (1 ou 2). (hérité V1, peut être ignoré V2 si inutile) */
   selectedSejour: 1 | 2
   setSelectedSejour: (s: 1 | 2) => void
   // Actions métier
@@ -75,19 +78,25 @@ interface AppState {
   removeGroupe: (groupeId: number, eleveIds: number[]) => Promise<void>
   /** Met à jour la couleur du groupe (hex #rrggbb), enregistrée dans Grist (Couleur). */
   updateGroupeCouleur: (groupeId: number, hexColor: string) => Promise<void>
-  /** Verrouille un élève (LockedBy / Verrou = utilisateur courant). */
+
+  /** Verrouille un élève (Lock table). */
   lockEleve: (eleveId: number) => Promise<void>
   /** Déverrouille un élève. */
   unlockEleve: (eleveId: number) => Promise<void>
-  /** Verrouille un groupe (page chambres). */
+  /** Verrouille un groupe. */
   lockGroupe: (groupeId: number) => Promise<void>
-  /** Déverrouille un groupe (annulation drag ou après drop). */
+  /** Déverrouille un groupe. */
   unlockGroupe: (groupeId: number) => Promise<void>
-  /** Utilisateur courant (SessionUser ou docInfo), pour debug et verrous. */
+
+  /** utilisateur effectif utilisé par les verrous (affichage uniquement) */
   currentUser: string
-  /** Infos session (email, name, sessionId) pour le mode debug. */
+  /** WidgetSessionId stable pour toute la durée de vie du widget. */
+  widgetSessionId: string
+  /** Logs bruts (pour debug éventuel). */
+  actionLogs: ActionLogRecord[]
+
+  /** Infos session (legacy) et label brut docInfo, pour compat avec l'UI actuelle. */
   sessionUserInfo: CurrentUserInfo | null
-  /** Libellé brut renvoyé par Grist (docInfo.user). */
   docUserLabel: string
 }
 
@@ -99,6 +108,32 @@ export function useAppState(): AppState {
     throw new Error('useAppState doit être utilisé dans un AppStateProvider')
   }
   return ctx
+}
+
+/** Génère un identifiant unique par session widget (rafraîchi seulement au reload de l’iframe). */
+function generateWidgetSessionId(): string {
+  return `cc-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/** Filtrer les locks d’une ressource donnée. */
+function getLocksForResource(
+  locks: LockRecord[],
+  resourceType: ResourceType,
+  resourceId: number,
+): LockRecord[] {
+  return locks.filter((l) => l.resourceType === resourceType && l.resourceId === resourceId)
+}
+
+/** Choisir un lock gagnant de manière déterministe (par exemple, plus ancien CreatedAt ou plus petit id). */
+function pickWinningLock(candidates: LockRecord[]): LockRecord | null {
+  if (candidates.length === 0) return null
+  const sorted = [...candidates].sort((a, b) => {
+    const ta = Date.parse(a.createdAt || '') || 0
+    const tb = Date.parse(b.createdAt || '') || 0
+    if (ta !== tb) return ta - tb
+    return a.id - b.id
+  })
+  return sorted[0]
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
@@ -116,11 +151,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [eleves, setEleves] = useState<EleveRecord[]>([])
   const [groupes, setGroupes] = useState<GroupeRecord[]>([])
   const [chambres, setChambres] = useState<ChambreRecord[]>([])
+  const [locks, setLocks] = useState<LockRecord[]>([])
+  const [actionLogs, setActionLogs] = useState<ActionLogRecord[]>([])
   const [schemaOk, setSchemaOk] = useState<boolean>(true)
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
-  const [currentUser, setCurrentUser] = useState<string>('')
+
+  const [currentUser, setCurrentUser] = useState<string>('Anonyme')
+  const widgetSessionIdRef = useRef<string>(generateWidgetSessionId())
+
+  // Legacy pour debug UI actuel
   const [sessionUserInfo, setSessionUserInfo] = useState<CurrentUserInfo | null>(null)
   const [docUserLabel, setDocUserLabel] = useState<string>('Anonyme')
+
   const refreshDataRef = useRef<() => Promise<void>>(async () => {})
 
   const env = getGristEnvironment()
@@ -157,23 +199,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           errorMessage: null,
           hasGroupRoomLink: Boolean(mapping.groupeChambreColumn),
         }))
+
         setEleves(mapEleves(docData, env.mapping))
         setGroupes(mapGroupes(docData, env.mapping))
         setChambres(mapChambres(docData, env.mapping))
+
+        setLocks(mapLocks(docData, env.mapping))
+        setActionLogs(mapActionLogs(docData, env.mapping))
       },
-      async (info) => {
-        try {
-          const raw = info?.user
-          const rawLabel = raw?.email || raw?.name || 'Anonyme'
-          setDocUserLabel(rawLabel)
-          const session = await ensureSessionUser(env.mapping, info?.user ?? null)
-          setSessionUserInfo(session)
-          setCurrentUser(session.name || session.email || 'Anonyme')
-        } catch {
-          const user = info?.user
-          setSessionUserInfo(null)
-          setCurrentUser(user?.email || user?.name || 'Anonyme')
-        }
+      (info) => {
+        const user = info?.user
+        const label = user?.email || user?.name || 'Anonyme'
+        setCurrentUser(label)
+        setDocUserLabel(label)
+        // On ne s'appuie plus sur SessionUser comme vérité, on la laisse à null pour l'instant.
+        setSessionUserInfo(null)
       },
       (err) => {
         console.error('[Composition Chambre] Erreur Grist :', err)
@@ -188,14 +228,54 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => {}
   }, [env.mapping])
 
+  /**
+   * Vue décorée avec les verrous issus de la table Lock.
+   * Source de vérité = Lock, les champs Eleve.verrou / Groupe.lockedBy sont des vues.
+   */
+  const elevesWithLocks = useMemo<EleveRecord[]>(() => {
+    if (locks.length === 0) return eleves
+    const now = new Date()
+    const activeLocks = locks.filter(
+      (l) => l.resourceType === 'Eleve' && isLockActive(l, now),
+    )
+    return eleves.map((e) => {
+      const candidates = activeLocks.filter((l) => l.resourceId === e.id)
+      const winning = pickWinningLock(candidates)
+      if (!winning) {
+        return { ...e, verrou: undefined, lockedAt: undefined }
+      }
+      const lockedBy = winning.createdByName || winning.widgetSessionId || undefined
+      const lockedAt = winning.createdAt || winning.lastModifiedAt || undefined
+      return { ...e, verrou: lockedBy, lockedAt }
+    })
+  }, [eleves, locks])
+
+  const groupesWithLocks = useMemo<GroupeRecord[]>(() => {
+    if (locks.length === 0) return groupes
+    const now = new Date()
+    const activeLocks = locks.filter(
+      (l) => l.resourceType === 'Groupe' && isLockActive(l, now),
+    )
+    return groupes.map((g) => {
+      const candidates = activeLocks.filter((l) => l.resourceId === g.id)
+      const winning = pickWinningLock(candidates)
+      if (!winning) {
+        return { ...g, lockedBy: undefined, lockedAt: undefined }
+      }
+      const lockedBy = winning.createdByName || winning.widgetSessionId || undefined
+      const lockedAt = winning.createdAt || winning.lastModifiedAt || undefined
+      return { ...g, lockedBy, lockedAt }
+    })
+  }, [groupes, locks])
+
   const filteredEleves = useMemo(
-    () => eleves.filter((e) => (e.sejour ?? 1) === ui.selectedSejour),
-    [eleves, ui.selectedSejour],
+    () => elevesWithLocks.filter((e) => (e.sejour ?? 1) === ui.selectedSejour),
+    [elevesWithLocks, ui.selectedSejour],
   )
 
   const filteredGroupes = useMemo(
-    () => groupes.filter((g) => (g.sejour ?? 1) === ui.selectedSejour),
-    [groupes, ui.selectedSejour],
+    () => groupesWithLocks.filter((g) => (g.sejour ?? 1) === ui.selectedSejour),
+    [groupesWithLocks, ui.selectedSejour],
   )
 
   const groupesAvecEleves = useMemo<GroupeWithMembers[]>(() => {
@@ -244,13 +324,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [filteredEleves],
   )
 
-  const classes = useMemo(() => {
-    const set = new Set<string>()
-    for (const e of filteredEleves) {
-      if (e.classe?.trim()) set.add(e.classe.trim())
-    }
-    return [...set].sort()
-  }, [filteredEleves])
+  const classes = useMemo(
+    () =>
+      Array.from(new Set(filteredEleves.map((e) => e.classe)))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [filteredEleves],
+  )
 
   const setTheme = useCallback((mode: ThemeMode) => {
     setUi((prev) => ({ ...prev, theme: mode }))
@@ -275,13 +355,183 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setUi((prev) => ({ ...prev, selectedSejour: s }))
   }, [])
 
+  const createLock = useCallback(
+    async (resourceType: ResourceType, resourceId: number, resourceLabel: string) => {
+      const api = getDocApi()
+      const mapping = env.mapping
+      if (!api || !mapping.lock) return null
+
+      const now = new Date()
+      const expiresAt = new Date(now.getTime() + 2 * 60 * 1000) // 2 minutes
+      const lockTable = mapping.lock
+
+      const existing = getLocksForResource(locks, resourceType, resourceId).filter((l) =>
+        isLockActive(l, now),
+      )
+      const foreignActive = existing.filter(
+        (l) => l.widgetSessionId !== widgetSessionIdRef.current,
+      )
+      if (foreignActive.length > 0) {
+        const l = pickWinningLock(foreignActive)!
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: `Ressource déjà manipulée par ${l.createdByName || l.widgetSessionId}`,
+        }))
+        return null
+      }
+
+      try {
+        await api.applyUserActions([
+          [
+            'AddRecord',
+            lockTable.table,
+            null,
+            {
+              [lockTable.columns.resourceType]: resourceType,
+              [lockTable.columns.resourceId]: resourceId,
+              [lockTable.columns.resourceLabel]: resourceLabel,
+              [lockTable.columns.widgetSessionId]: widgetSessionIdRef.current,
+              [lockTable.columns.lockState]: 'active',
+              [lockTable.columns.expiresAt]: expiresAt.toISOString(),
+            },
+          ],
+        ])
+        await refreshDataRef.current()
+        return true
+      } catch (err) {
+        console.error('[Composition Chambre] Erreur création lock :', err)
+        setUi((prev) => ({
+          ...prev,
+          errorMessage: "Impossible de verrouiller l'élément (Lock).",
+        }))
+        return null
+      }
+    },
+    [env.mapping, locks],
+  )
+
+  const releaseLocksForResource = useCallback(
+    async (resourceType: ResourceType, resourceId: number) => {
+      const api = getDocApi()
+      const mapping = env.mapping
+      if (!api || !mapping.lock) return
+
+      const lockTable = mapping.lock
+      const now = new Date()
+      const resourceLocks = getLocksForResource(locks, resourceType, resourceId)
+
+      const actions: any[] = []
+      for (const l of resourceLocks) {
+        if (!isLockActive(l, now)) continue
+        if (l.widgetSessionId === widgetSessionIdRef.current) {
+          actions.push([
+            'UpdateRecord',
+            lockTable.table,
+            l.id,
+            {
+              [lockTable.columns.lockState]: 'released',
+              [lockTable.columns.expiresAt]: now.toISOString(),
+            },
+          ])
+        }
+      }
+      if (actions.length === 0) return
+
+      try {
+        await api.applyUserActions(actions)
+        await refreshDataRef.current()
+      } catch (err) {
+        console.error('[Composition Chambre] Erreur release lock :', err)
+      }
+    },
+    [env.mapping, locks],
+  )
+
+  const lockEleve = useCallback(
+    async (eleveId: number) => {
+      const eleve = eleves.find((e) => e.id === eleveId)
+      if (!eleve) return
+      const label = `${eleve.nom} ${eleve.prenom}`.trim() || `Eleve ${eleveId}`
+      const ok = await createLock('Eleve', eleveId, label)
+      if (!ok) return
+      await logAction(
+        env.mapping,
+        'lock_start',
+        widgetSessionIdRef.current,
+        'Eleve',
+        eleveId,
+        '',
+      )
+    },
+    [createLock, eleves, env.mapping],
+  )
+
+  const unlockEleve = useCallback(
+    async (eleveId: number) => {
+      await releaseLocksForResource('Eleve', eleveId)
+      await logAction(
+        env.mapping,
+        'lock_release',
+        widgetSessionIdRef.current,
+        'Eleve',
+        eleveId,
+        '',
+      )
+    },
+    [env.mapping, releaseLocksForResource],
+  )
+
+  const lockGroupe = useCallback(
+    async (groupeId: number) => {
+      const groupe = groupes.find((g) => g.id === groupeId)
+      if (!groupe) return
+      const label = `Groupe ${groupe.numGroupe}`
+      const ok = await createLock('Groupe', groupeId, label)
+      if (!ok) return
+      await logAction(
+        env.mapping,
+        'lock_start',
+        widgetSessionIdRef.current,
+        'Groupe',
+        groupeId,
+        '',
+      )
+    },
+    [createLock, env.mapping, groupes],
+  )
+
+  const unlockGroupe = useCallback(
+    async (groupeId: number) => {
+      await releaseLocksForResource('Groupe', groupeId)
+      await logAction(
+        env.mapping,
+        'lock_release',
+        widgetSessionIdRef.current,
+        'Groupe',
+        groupeId,
+        '',
+      )
+    },
+    [env.mapping, releaseLocksForResource],
+  )
+
   const moveEleveToGroupe = useCallback(
     async (eleveId: number, groupeId: number | null) => {
+      const who = currentUser || 'Anonyme'
       try {
-        await assignEleveToGroupe(eleveId, groupeId, env.mapping, currentUser || 'Anonyme')
+        await assignEleveToGroupeApi(eleveId, groupeId, env.mapping, who)
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
         await refreshDataRef.current()
         setUi((prev) => ({ ...prev, isSyncing: false }))
+        await logAction(
+          env.mapping,
+          'move_eleve',
+          widgetSessionIdRef.current,
+          'Eleve',
+          eleveId,
+          groupeId != null ? `vers groupe ${groupeId}` : 'retiré du groupe',
+        )
+        await releaseLocksForResource('Eleve', eleveId)
       } catch (error: any) {
         console.error('[Composition Chambre] Erreur d’écriture Eleve.Groupe :', error)
         setUi((prev) => ({
@@ -290,15 +540,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           errorMessage:
             "Impossible d'enregistrer la modification (probable mode lecture seule ou manque de droits). Vérifiez dans Grist que vous avez le droit d'éditer le document et les tables Eleve / Groupe.",
         }))
+        await logAction(
+          env.mapping,
+          'error',
+          widgetSessionIdRef.current,
+          'Eleve',
+          eleveId,
+          String(error?.message || error),
+        )
       }
     },
-    [currentUser, env.mapping],
+    [currentUser, env.mapping, releaseLocksForResource],
   )
 
   const moveGroupeToChambre = useCallback(
     async (groupeId: number, chambreId: number | null) => {
       const who = currentUser || 'Anonyme'
-      // Vérification de capacité : refus si la chambre ne peut accueillir tous les élèves du groupe.
       const groupe = groupesAvecEleves.find((g) => g.id === groupeId)
       const chambre = chambresAvecStats.find((c) => c.id === chambreId)
       if (groupe && chambre) {
@@ -311,10 +568,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       }
       try {
-        await assignGroupeToChambre(groupeId, chambreId, env.mapping, currentUser || 'Anonyme')
+        await assignGroupeToChambreApi(groupeId, chambreId, env.mapping, who)
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
         await refreshDataRef.current()
         setUi((prev) => ({ ...prev, isSyncing: false }))
+        await logAction(
+          env.mapping,
+          'group_to_chambre',
+          widgetSessionIdRef.current,
+          'Groupe',
+          groupeId,
+          chambreId != null ? `vers chambre ${chambreId}` : 'retiré de la chambre',
+        )
+        await releaseLocksForResource('Groupe', groupeId)
       } catch (error: any) {
         console.error('[Composition Chambre] Erreur d’écriture Groupe.Chambre :', error)
         const message =
@@ -326,10 +592,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           readOnly: true,
           errorMessage: message,
         }))
-        await logAction(env.mapping, 'error', who, 'Groupe', groupeId, String(error?.message || error))
+        await logAction(
+          env.mapping,
+          'error',
+          widgetSessionIdRef.current,
+          'Groupe',
+          groupeId,
+          String(error?.message || error),
+        )
       }
     },
-    [chambresAvecStats, currentUser, env.mapping, groupesAvecEleves],
+    [chambresAvecStats, currentUser, env.mapping, groupesAvecEleves, releaseLocksForResource],
   )
 
   const createGroupeCallback = useCallback(async (): Promise<number> => {
@@ -337,11 +610,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       filteredGroupes.length === 0
         ? 1
         : Math.max(...filteredGroupes.map((g) => g.numGroupe)) + 1
-    const usedColors = filteredGroupes
-      .map((g) => g.couleur)
-      .filter((c): c is string => Boolean(c))
-    const initialCouleur = getNewGroupColor(filteredGroupes.length, usedColors)
-    const newId = await createGroupe(
+    const initialCouleur = '#4f46e5'
+    const newId = await createGroupeApi(
       nextNum,
       ui.selectedSejour,
       env.mapping,
@@ -350,6 +620,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
     await refreshDataRef.current()
     setUi((prev) => ({ ...prev, isSyncing: false }))
+    await logAction(
+      env.mapping,
+      'create_groupe',
+      widgetSessionIdRef.current,
+      'Groupe',
+      newId,
+      '',
+    )
     return newId
   }, [env.mapping, filteredGroupes, ui.selectedSejour])
 
@@ -360,6 +638,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setUi((prev) => ({ ...prev, isSyncing: true, errorMessage: null }))
         await refreshDataRef.current()
         setUi((prev) => ({ ...prev, isSyncing: false }))
+        await logAction(
+          env.mapping,
+          'delete_groupe',
+          widgetSessionIdRef.current,
+          'Groupe',
+          groupeId,
+          `avec ${eleveIds.length} élève(s) détaché(s)`,
+        )
       } catch (error: any) {
         console.error('[Composition Chambre] Erreur suppression groupe :', error)
         setUi((prev) => ({
@@ -368,6 +654,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           errorMessage:
             "Impossible de supprimer le groupe (droits ou colonnes manquantes). Vérifiez l'accès en écriture.",
         }))
+        await logAction(
+          env.mapping,
+          'error',
+          widgetSessionIdRef.current,
+          'Groupe',
+          groupeId,
+          String(error?.message || error),
+        )
       }
     },
     [env.mapping],
@@ -386,77 +680,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           errorMessage: "Impossible d'enregistrer la couleur du groupe.",
         }))
-      }
-    },
-    [env.mapping],
-  )
-
-  const lockEleveCallback = useCallback(
-    async (eleveId: number) => {
-      const eleve = eleves.find((e) => e.id === eleveId)
-      const lockedBy = eleve?.lockedBy ?? eleve?.verrou
-      const who = currentUser || 'Anonyme'
-      if (lockedBy && lockedBy !== who) {
-        setUi((prev) => ({
-          ...prev,
-          errorMessage: `En cours de manipulation par ${lockedBy}`,
-        }))
-        return
-      }
-      try {
-        await setEleveVerrou(eleveId, who, env.mapping)
-        await refreshDataRef.current()
-        await logAction(env.mapping, 'lock_eleve', who, 'Eleve', eleveId, '')
-      } catch (error: any) {
-        console.warn('[Composition Chambre] Verrouillage élève :', error)
-        setUi((prev) => ({ ...prev, errorMessage: 'Verrouillage impossible (colonne Verrou/LockedBy manquante ?).' }))
-      }
-    },
-    [currentUser, eleves, env.mapping],
-  )
-
-  const unlockEleveCallback = useCallback(
-    async (eleveId: number) => {
-      try {
-        await setEleveVerrou(eleveId, null, env.mapping)
-        await refreshDataRef.current()
-      } catch (error: any) {
-        console.warn('[Composition Chambre] Déverrouillage élève :', error)
-      }
-    },
-    [env.mapping],
-  )
-
-  const lockGroupeCallback = useCallback(
-    async (groupeId: number) => {
-      const groupe = groupes.find((g) => g.id === groupeId)
-      const lockedBy = groupe?.lockedBy
-      const who = currentUser || 'Anonyme'
-      if (lockedBy && lockedBy !== who) {
-        setUi((prev) => ({
-          ...prev,
-          errorMessage: `Groupe en cours de manipulation par ${lockedBy}`,
-        }))
-        return
-      }
-      try {
-        await setGroupeLock(groupeId, who, env.mapping)
-        await refreshDataRef.current()
-        await logAction(env.mapping, 'lock_groupe', who, 'Groupe', groupeId, '')
-      } catch (error: any) {
-        console.warn('[Composition Chambre] Verrouillage groupe :', error)
-      }
-    },
-    [currentUser, env.mapping, groupes],
-  )
-
-  const unlockGroupeCallback = useCallback(
-    async (groupeId: number) => {
-      try {
-        await clearGroupeLock(groupeId, env.mapping)
-        await refreshDataRef.current()
-      } catch (error: any) {
-        console.warn('[Composition Chambre] Déverrouillage groupe :', error)
       }
     },
     [env.mapping],
@@ -484,15 +707,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     createGroupe: createGroupeCallback,
     removeGroupe: removeGroupeCallback,
     updateGroupeCouleur: updateGroupeCouleurCallback,
-    lockEleve: lockEleveCallback,
-    unlockEleve: unlockEleveCallback,
-    lockGroupe: lockGroupeCallback,
-    unlockGroupe: unlockGroupeCallback,
-    currentUser: currentUser || 'Anonyme',
+    lockEleve,
+    unlockEleve,
+    lockGroupe,
+    unlockGroupe,
+    currentUser,
+    widgetSessionId: widgetSessionIdRef.current,
+    actionLogs,
     sessionUserInfo,
     docUserLabel,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
 }
+
+export default AppStateContext
 

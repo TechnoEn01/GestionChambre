@@ -9,13 +9,12 @@ export interface SchemaMapping {
   chambre: TableColumnMapping
   /** Optionnel – colonne Ref vers Chambre depuis Groupe. */
   groupeChambreColumn?: string
-  /** Table technique pour identifier l'utilisateur courant (SessionUser). */
+  /** Table technique pour identifier la session widget (optionnelle). */
   sessionUser?: TableColumnMapping
-  /** Table optionnelle pour journaliser les actions (ActionLog). */
+  /** Table des verrous coopératifs (Lock). */
+  lock?: TableColumnMapping
+  /** Table d'audit des actions importantes (ActionLog). */
   actionLog?: TableColumnMapping
-  /** @deprecated Tables optionnelles pour les verrous et les logs (remplacées par colonnes sur Eleve/Groupe). */
-  lockTable?: TableColumnMapping
-  logTable?: TableColumnMapping
 }
 
 // Mapping par défaut aligné sur la description du document Grist.
@@ -28,13 +27,11 @@ export const defaultSchemaMapping: SchemaMapping = {
       prenom: 'Prenom',
       classe: 'Classe',
       groupeRef: 'Groupe',
+      // Colonnes legacy liées au verrouillage / audit.
+      // En V2, la source de vérité des verrous est la table Lock
+      // et l'audit la table ActionLog.
       verrou: 'Verrou',
       sejour: 'Sejour',
-      lockedBy: 'LockedBy',
-      lockedAt: 'LockedAt',
-      lastModifiedBy: 'LastModifiedBy',
-      lastModifiedAt: 'LastModifiedAt',
-      status: 'Status',
     },
   },
   groupe: {
@@ -46,13 +43,10 @@ export const defaultSchemaMapping: SchemaMapping = {
       ouvert: 'Ouvert',
       xPiton: 'X_piton',
       yPiton: 'Y_piton',
+      // Position du groupe sur le canvas (persistée indépendamment du piton).
+      xGroup: 'X_Group',
+      yGroup: 'Y_Group',
       chambreRef: 'Chambre',
-      sejour: 'Sejour',
-      lockedBy: 'LockedBy',
-      lockedAt: 'LockedAt',
-      lastModifiedBy: 'LastModifiedBy',
-      lastModifiedAt: 'LastModifiedAt',
-      status: 'Status',
     },
   },
   chambre: {
@@ -61,36 +55,51 @@ export const defaultSchemaMapping: SchemaMapping = {
       id: 'id',
       nomChambre: 'NomChambre',
       capacite: 'Capacite',
-      lastModifiedBy: 'LastModifiedBy',
-      lastModifiedAt: 'LastModifiedAt',
-      status: 'Status',
     },
   },
   groupeChambreColumn: 'Chambre',
-  sessionUser: {
-    table: 'SessionUser',
+  // SessionUser reste optionnelle et peut toujours être configurée si besoin
+  // pour stocker un WidgetSessionId associé à un utilisateur.
+  sessionUser: undefined,
+  // Tables Lock et ActionLog (V2) – à déclarer dans Grist avec ces colonnes.
+  lock: {
+    table: 'Lock',
     columns: {
       id: 'id',
-      email: 'Email',
-      name: 'Name',
-      createdAt: 'CreatedAt',
+      resourceType: 'ResourceType',
+      resourceId: 'ResourceId',
+      resourceLabel: 'ResourceLabel',
       widgetSessionId: 'WidgetSessionId',
-      active: 'Active',
+      lockState: 'LockState',
+      createdAt: 'CreatedAt',
+      lastModifiedAt: 'LastModifiedAt',
+      expiresAt: 'ExpiresAt',
+      createdByName: 'CreatedByName',
+      createdByEmail: 'CreatedByEmail',
+      createdByUserID: 'CreatedByUserID',
+      lastModifiedByName: 'LastModifiedByName',
+      lastModifiedByEmail: 'LastModifiedByEmail',
+      lastModifiedByUserID: 'LastModifiedByUserID',
     },
   },
   actionLog: {
     table: 'ActionLog',
     columns: {
       id: 'id',
-      at: 'At',
-      action: 'Action',
-      userId: 'UserId',
-      entityType: 'EntityType',
-      entityId: 'EntityId',
+      actionType: 'ActionType',
+      resourceType: 'ResourceType',
+      resourceId: 'ResourceId',
+      fromGroup: 'FromGroup',
+      toGroup: 'ToGroup',
+      fromChambre: 'FromChambre',
+      toChambre: 'ToChambre',
+      widgetSessionId: 'WidgetSessionId',
       details: 'Details',
+      createdAt: 'CreatedAt',
+      createdByName: 'CreatedByName',
+      createdByEmail: 'CreatedByEmail',
+      createdByUserID: 'CreatedByUserID',
     },
   },
-  lockTable: undefined,
-  logTable: undefined,
 }
 

@@ -1,6 +1,7 @@
 import './App.css'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAppState } from './state/AppStateContext'
+import type { EleveRecord, GroupeWithMembers } from './types/domain'
 
 type AppPage = 'eleves-groupes' | 'groupes-chambres'
 
@@ -342,14 +343,14 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const filteredSansGroupe = useMemo(() => {
-    let list = elevesSansGroupe
+    let list: EleveRecord[] = elevesSansGroupe
     if (selectedClasses.length > 0) {
-      list = list.filter((e) => selectedClasses.includes(e.classe))
+      list = list.filter((e: EleveRecord) => selectedClasses.includes(e.classe))
     }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase()
       list = list.filter(
-        (e) =>
+        (e: EleveRecord) =>
           e.nom.toLowerCase().includes(q) ||
           e.prenom.toLowerCase().includes(q) ||
           e.classe.toLowerCase().includes(q) ||
@@ -398,16 +399,30 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
             <div className="debug-grist-row">
               <strong>Utilisateur effectif (currentUser) :</strong> {currentUser || '—'}
             </div>
-            {eleves.some((e) => e.verrou) && (
+            {eleves.some((e: EleveRecord) => e.verrou) && (
               <div className="debug-grist-row">
                 <strong>Élèves verrouillés :</strong>{' '}
-                {eleves.filter((e) => e.verrou).map((e) => `${e.nom} par ${e.verrou}${e.lockedAt ? ` (${e.lockedAt})` : ''}`).join(' ; ')}
+                {eleves
+                  .filter((e: EleveRecord) => e.verrou)
+                  .map(
+                    (e: EleveRecord) =>
+                      `${e.nom} par ${e.verrou}${e.lockedAt ? ` (${e.lockedAt})` : ''}`,
+                  )
+                  .join(' ; ')}
               </div>
             )}
-            {groupes.some((g) => g.lockedBy) && (
+            {groupes.some((g: GroupeWithMembers | any) => g.lockedBy) && (
               <div className="debug-grist-row">
                 <strong>Groupes verrouillés :</strong>{' '}
-                {groupes.filter((g) => g.lockedBy).map((g) => `Groupe ${g.numGroupe} par ${g.lockedBy}${g.lockedAt ? ` (${g.lockedAt})` : ''}`).join(' ; ')}
+                {groupes
+                  .filter((g: GroupeWithMembers | any) => g.lockedBy)
+                  .map(
+                    (g: GroupeWithMembers | any) =>
+                      `Groupe ${g.numGroupe} par ${g.lockedBy}${
+                        g.lockedAt ? ` (${g.lockedAt})` : ''
+                      }`,
+                  )
+                  .join(' ; ')}
               </div>
             )}
           </div>
@@ -447,7 +462,7 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
             </div>
           ) : (
             <ul className="debug-five-list">
-              {cinqPremiers.map((e) => (
+              {cinqPremiers.map((e: EleveRecord) => (
                 <li key={e.id}>
                   {e.nom}  {e.prenom} · {e.classe} · Groupe id: {e.groupeId ?? '—'}
                 </li>
@@ -476,7 +491,7 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
             Toutes les classes
           </label>
           <div className="students-class-list">
-            {classes.map((c) => (
+            {classes.map((c: string) => (
               <label key={c} className="students-class-checkbox">
                 <input
                   type="checkbox"
@@ -508,7 +523,7 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
           handleUnassignDrop(evt)
         }}
       >
-        {filteredSansGroupe.map((e) => (
+        {filteredSansGroupe.map((e: EleveRecord) => (
           <div
             key={e.id}
             className={`student-card ${selectedEleveId === e.id ? 'student-card-selected' : ''} ${draggedStudentId === e.id ? 'student-card-dragging' : ''} ${e.verrou && e.verrou !== currentUser ? 'student-card-locked-by-other' : ''}`}
@@ -597,7 +612,7 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
         className="canvas"
         onScroll={onGroupsCanvasScroll ? (evt) => onGroupsCanvasScroll(evt.currentTarget.scrollTop) : undefined}
       >
-        {groupesAvecEleves.map((g) => {
+        {groupesAvecEleves.map((g: GroupeWithMembers) => {
           const borderColor = g.couleur && /^#?[0-9A-Fa-f]{6}$/.test(g.couleur.replace('#', '')) ? (g.couleur.startsWith('#') ? g.couleur : `#${g.couleur}`) : '#4f46e5'
           const bgColor = `${borderColor}18`
           return (
@@ -671,7 +686,7 @@ function GroupsCanvas({ currentUser = '', selectedEleveId, onEleveAssigned, mode
               )}
             </div>
             <div className="group-body">
-              {g.eleves.map((e) => (
+              {g.eleves.map((e: EleveRecord) => (
                 <span
                   key={e.id}
                   className={`group-student-pill ${draggedStudentId === e.id ? 'group-pill-dragging' : ''}`}

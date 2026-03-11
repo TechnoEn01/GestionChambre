@@ -7,7 +7,14 @@ import type {
   GristRowRecord,
 } from './gristTypes'
 import { defaultSchemaMapping, type SchemaMapping } from '../config/schemaConfig'
-import type { EleveRecord, GroupeRecord, ChambreRecord } from '../types/domain'
+import type {
+  EleveRecord,
+  GroupeRecord,
+  ChambreRecord,
+  LockRecord,
+  ActionLogRecord,
+  LockState,
+} from '../types/domain'
 
 export interface GristEnvironment {
   grist: Grist | null
@@ -105,15 +112,19 @@ function normalizeTableData(raw: GristTableData | GristRowRecord[]): GristTableD
 export async function fetchDocData(mapping: SchemaMapping): Promise<GristDocData> {
   const api = getDocApi()
   if (!api) return {}
-  const [eleveRaw, groupeRaw, chambreRaw] = await Promise.all([
+  const [eleveRaw, groupeRaw, chambreRaw, lockRaw, logRaw] = await Promise.all([
     api.fetchTable(mapping.eleve.table).catch(() => null),
     api.fetchTable(mapping.groupe.table).catch(() => null),
     api.fetchTable(mapping.chambre.table).catch(() => null),
+    mapping.lock ? api.fetchTable(mapping.lock.table).catch(() => null) : Promise.resolve(null),
+    mapping.actionLog ? api.fetchTable(mapping.actionLog.table).catch(() => null) : Promise.resolve(null),
   ])
   const docData: GristDocData = {}
   if (eleveRaw) docData[mapping.eleve.table] = normalizeTableData(eleveRaw)
   if (groupeRaw) docData[mapping.groupe.table] = normalizeTableData(groupeRaw)
   if (chambreRaw) docData[mapping.chambre.table] = normalizeTableData(chambreRaw)
+  if (lockRaw && mapping.lock) docData[mapping.lock.table] = normalizeTableData(lockRaw)
+  if (logRaw && mapping.actionLog) docData[mapping.actionLog.table] = normalizeTableData(logRaw)
   return docData
 }
 
@@ -275,6 +286,118 @@ export function mapChambres(data: GristDocData, mapping: SchemaMapping): Chambre
     })
   }
   return records
+}
+
+/** Convertit la table Lock en tableau de LockRecord (verrous coopératifs). */
+export function mapLocks(data: GristDocData, mapping: SchemaMapping): LockRecord[] {
+  if (!mapping.lock) return []
+  const tableInfo = mapping.lock
+  const table = data[tableInfo.table]
+  if (!table || !table.id) return []
+
+  const ids = table.id
+  const records: LockRecord[] = []
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i]
+    records.push({
+      id,
+      resourceType: columnValue<'Eleve' | 'Groupe'>(table, tableInfo.columns.resourceType, i, 'Eleve'),
+      resourceId: columnValue<number>(table, tableInfo.columns.resourceId, i, 0),
+      resourceLabel: columnValue<string>(table, tableInfo.columns.resourceLabel, i, ''),
+      widgetSessionId: columnValue<string>(table, tableInfo.columns.widgetSessionId, i, ''),
+      lockState: columnValue<LockState>(table, tableInfo.columns.lockState, i, 'active'),
+      createdAt: columnValue<string>(table, tableInfo.columns.createdAt, i, ''),
+      lastModifiedAt: columnValue<string>(table, tableInfo.columns.lastModifiedAt, i, ''),
+      expiresAt: tableInfo.columns.expiresAt
+        ? columnValue<string | null>(table, tableInfo.columns.expiresAt, i, null)
+        : null,
+      createdByName: tableInfo.columns.createdByName
+        ? columnValue<string | null>(table, tableInfo.columns.createdByName, i, null)
+        : null,
+      createdByEmail: tableInfo.columns.createdByEmail
+        ? columnValue<string | null>(table, tableInfo.columns.createdByEmail, i, null)
+        : null,
+      createdByUserID: tableInfo.columns.createdByUserID
+        ? columnValue<string | null>(table, tableInfo.columns.createdByUserID, i, null)
+        : null,
+      lastModifiedByName: tableInfo.columns.lastModifiedByName
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedByName, i, null)
+        : null,
+      lastModifiedByEmail: tableInfo.columns.lastModifiedByEmail
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedByEmail, i, null)
+        : null,
+      lastModifiedByUserID: tableInfo.columns.lastModifiedByUserID
+        ? columnValue<string | null>(table, tableInfo.columns.lastModifiedByUserID, i, null)
+        : null,
+    })
+  }
+  return records
+}
+
+/** Convertit la table ActionLog en tableau d'ActionLogRecord. */
+export function mapActionLogs(data: GristDocData, mapping: SchemaMapping): ActionLogRecord[] {
+  if (!mapping.actionLog) return []
+  const tableInfo = mapping.actionLog
+  const table = data[tableInfo.table]
+  if (!table || !table.id) return []
+
+  const ids = table.id
+  const records: ActionLogRecord[] = []
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i]
+    records.push({
+      id,
+      actionType: columnValue<string>(table, tableInfo.columns.actionType, i, 'error') as any,
+      resourceType: columnValue<'Eleve' | 'Groupe' | 'Chambre'>(
+        table,
+        tableInfo.columns.resourceType,
+        i,
+        'Eleve',
+      ),
+      resourceId: columnValue<number | null>(table, tableInfo.columns.resourceId, i, null),
+      fromGroup: tableInfo.columns.fromGroup
+        ? columnValue<number | null>(table, tableInfo.columns.fromGroup, i, null)
+        : null,
+      toGroup: tableInfo.columns.toGroup
+        ? columnValue<number | null>(table, tableInfo.columns.toGroup, i, null)
+        : null,
+      fromChambre: tableInfo.columns.fromChambre
+        ? columnValue<number | null>(table, tableInfo.columns.fromChambre, i, null)
+        : null,
+      toChambre: tableInfo.columns.toChambre
+        ? columnValue<number | null>(table, tableInfo.columns.toChambre, i, null)
+        : null,
+      widgetSessionId: columnValue<string>(table, tableInfo.columns.widgetSessionId, i, ''),
+      details: tableInfo.columns.details
+        ? columnValue<string | null>(table, tableInfo.columns.details, i, null) ?? undefined
+        : undefined,
+      createdAt: tableInfo.columns.createdAt
+        ? columnValue<string>(table, tableInfo.columns.createdAt, i, '')
+        : '',
+      createdByName: tableInfo.columns.createdByName
+        ? columnValue<string | null>(table, tableInfo.columns.createdByName, i, null)
+        : null,
+      createdByEmail: tableInfo.columns.createdByEmail
+        ? columnValue<string | null>(table, tableInfo.columns.createdByEmail, i, null)
+        : null,
+      createdByUserID: tableInfo.columns.createdByUserID
+        ? columnValue<string | null>(table, tableInfo.columns.createdByUserID, i, null)
+        : null,
+    })
+  }
+  return records
+}
+
+/**
+ * Vérifie si un lock est actif côté UI : état 'active' ET non expiré.
+ * NB : l'expiration se base sur ExpiresAt, qui doit être remplie par Grist
+ * (formule) ou par le widget. Cette fonction ne met pas à jour la base.
+ */
+export function isLockActive(lock: LockRecord, now: Date = new Date()): boolean {
+  if (lock.lockState !== 'active') return false
+  if (!lock.expiresAt) return true
+  const expires = new Date(lock.expiresAt).getTime()
+  return Number.isFinite(expires) && expires > now.getTime()
 }
 
 /** Optionnel : qui a fait la modification (pour LastModifiedBy et déverrouillage). */
@@ -501,13 +624,22 @@ export async function removeGroupe(
   await api.applyUserActions(actions)
 }
 
-/** Journalise une action dans la table ActionLog si elle existe. */
+/**
+ * Journalise une action dans la table ActionLog si elle existe.
+ *
+ * IMPORTANT :
+ * - l'identité de l'auteur (nom/email/id) n'est PAS passée en paramètre,
+ *   elle est déduite via les user stamps Grist (CreatedBy*).
+ * - le paramètre userId est conservé pour compatibilité ascendante mais
+ *   n'est plus écrit dans la base.
+ */
 export async function logAction(
   mapping: SchemaMapping,
-  action: string,
-  userId: string,
-  entityType: 'Eleve' | 'Groupe' | 'Chambre',
-  entityId: number,
+  actionType: string,
+  // Paramètre conservé pour compatibilité ascendante ; ignoré en V2.
+  _userId: string,
+  resourceType: 'Eleve' | 'Groupe' | 'Chambre',
+  resourceId: number,
   details?: string,
 ): Promise<void> {
   const api = getDocApi()
@@ -520,12 +652,12 @@ export async function logAction(
         log.table,
         null,
         {
-          [log.columns.at]: new Date().toISOString(),
-          [log.columns.action]: action,
-          [log.columns.userId]: userId,
-          [log.columns.entityType]: entityType,
-          [log.columns.entityId]: entityId,
+          [log.columns.actionType]: actionType,
+          [log.columns.resourceType]: resourceType,
+          [log.columns.resourceId]: resourceId,
+          [log.columns.widgetSessionId]: generateWidgetSessionId(),
           [log.columns.details]: details ?? '',
+          [log.columns.createdAt]: new Date().toISOString(),
         },
       ],
     ])
