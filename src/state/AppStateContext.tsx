@@ -87,6 +87,8 @@ interface AppState {
   currentUser: string
   /** Infos session (email, name, sessionId) pour le mode debug. */
   sessionUserInfo: CurrentUserInfo | null
+  /** Libellé brut renvoyé par Grist (docInfo.user). */
+  docUserLabel: string
 }
 
 const AppStateContext = createContext<AppState | undefined>(undefined)
@@ -118,6 +120,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [gristDebugInfo, setGristDebugInfo] = useState<GristDebugInfo | null>(null)
   const [currentUser, setCurrentUser] = useState<string>('')
   const [sessionUserInfo, setSessionUserInfo] = useState<CurrentUserInfo | null>(null)
+  const [docUserLabel, setDocUserLabel] = useState<string>('Anonyme')
   const refreshDataRef = useRef<() => Promise<void>>(async () => {})
 
   const env = getGristEnvironment()
@@ -160,6 +163,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       },
       async (info) => {
         try {
+          const raw = info?.user
+          const rawLabel = raw?.email || raw?.name || 'Anonyme'
+          setDocUserLabel(rawLabel)
           const session = await ensureSessionUser(env.mapping, info?.user ?? null)
           setSessionUserInfo(session)
           setCurrentUser(session.name || session.email || 'Anonyme')
@@ -484,6 +490,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     unlockGroupe: unlockGroupeCallback,
     currentUser: currentUser || 'Anonyme',
     sessionUserInfo,
+    docUserLabel,
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>

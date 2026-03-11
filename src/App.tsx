@@ -338,7 +338,7 @@ interface StudentsPanelProps {
 }
 
 function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, draggedStudentId, onStudentDragStart, onStudentDragEnd, studentsListRef, onStudentsListScroll }: StudentsPanelProps) {
-  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, groupes } = useAppState()
+  const { eleves, elevesSansGroupe, classes, moveEleveToGroupe, ui, gristDebugInfo, sessionUserInfo, docUserLabel, groupes } = useAppState()
   const [selectedClasses, setSelectedClasses] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const filteredSansGroupe = useMemo(() => {
@@ -387,14 +387,17 @@ function StudentsPanel({ currentUser = '', selectedEleveId, onSelectEleve, dragg
           </div>
           <div className="debug-grist-tables">
             <div className="debug-grist-row">
-              <strong>Vous :</strong> {currentUser || '—'}
+              <strong>Utilisateur (docInfo Grist) :</strong> {docUserLabel || '—'}
             </div>
             {sessionUserInfo && (
               <div className="debug-grist-row">
-                <strong>Session :</strong> {sessionUserInfo.email} / {sessionUserInfo.name}
+                <strong>SessionUser (table) :</strong> {sessionUserInfo.email} / {sessionUserInfo.name}
                 {sessionUserInfo.sessionId && ` (${sessionUserInfo.sessionId})`}
               </div>
             )}
+            <div className="debug-grist-row">
+              <strong>Utilisateur effectif (currentUser) :</strong> {currentUser || '—'}
+            </div>
             {eleves.some((e) => e.verrou) && (
               <div className="debug-grist-row">
                 <strong>Élèves verrouillés :</strong>{' '}
